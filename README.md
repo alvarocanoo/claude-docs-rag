@@ -32,6 +32,8 @@ If you're an engineer reviewing this for hiring purposes, the most interesting f
 | BM25 index (`bm25s`)            | green  | Built over the chunks, persisted under `data/bm25_index/`          |
 | Hybrid retrieval                | green  | 5 real queries via HTTP /search → top-3 relevant, P95 ~3.9 s        |
 | FastAPI HTTP server             | green  | `cdrag serve` → /healthz, /search, /ask, /metrics, lifespan warmup  |
+| Next.js 16 frontend             | green  | `web/` — fetches /search cross-origin; renders top-K with breadcrumb |
+| Dockerfile + .dockerignore      | green  | multi-stage, non-root, healthcheck; hadolint clean in CI            |
 | Agent + citation extraction     | code   | needs `ANTHROPIC_API_KEY` to demo end-to-end                       |
 | Eval suite                      | code   | runs against golden_dataset.jsonl; writes `evals/latest.json`      |
 
@@ -134,6 +136,28 @@ uv run cdrag ask "How do I stream messages from the Claude API?"
 # 8. Run the eval suite (needs ANTHROPIC_API_KEY)
 uv run cdrag eval --limit 5
 ```
+
+---
+
+## Web UI
+
+A minimal Next.js 16 + React 19 + Tailwind 4 frontend lives under [`web/`](web/).
+It hits the FastAPI `/search` endpoint cross-origin (CORS is enabled for
+`localhost:3000`) and renders the top-K reranked chunks with their section
+breadcrumb, source URL, and content excerpt.
+
+```powershell
+# 1. Start the API server in one terminal
+uv run cdrag serve --host 127.0.0.1 --port 8000
+
+# 2. Start the Next.js dev server in another
+cd web
+npm install
+npm run dev    # -> http://localhost:3000
+```
+
+Configure a non-default backend URL with `NEXT_PUBLIC_API_BASE_URL` before
+`npm run dev` (or `npm run build`).
 
 ---
 
