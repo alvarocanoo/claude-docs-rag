@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS documents (
     chunk_index     INTEGER NOT NULL,
     content         TEXT NOT NULL,
     content_tokens  INTEGER NOT NULL,
-    embedding       vector(1024),
+    embedding       vector(384),
     ingested_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (source_url, chunk_index)
 );

@@ -10,7 +10,7 @@ from sentence_transformers import SentenceTransformer
 from claude_docs_rag.models import Chunk
 from claude_docs_rag.settings import settings
 
-EMBEDDING_DIM = 1024
+EMBEDDING_DIM = 384
 
 
 @lru_cache(maxsize=2)

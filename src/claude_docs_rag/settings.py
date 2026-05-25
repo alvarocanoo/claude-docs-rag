@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     model_complex: str = "claude-sonnet-4-6"
     model_fallback_local: str = "qwen2.5:7b"
 
-    embedding_model: str = "BAAI/bge-m3"
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
     top_k_retrieval: int = 20
     top_k_rerank: int = 5

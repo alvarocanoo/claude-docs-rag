@@ -225,3 +225,37 @@ Use **Neon serverless Postgres** for both development and production, accessed v
 ### How we'll measure
 
 Cost: must stay inside free tier through development. Latency: P95 retrieval still ≤ 100 ms once warm.
+
+---
+
+## ADR-008 — Switch embedding model from `bge-m3` to `bge-small-en-v1.5`
+
+**Date**: 2026-05-25
+**Status**: Accepted (supersedes embedding choice in ADR-001)
+
+### Context
+
+ADR-001 picked `BAAI/bge-m3` (1024-dim, multilingual). On the dev machine (CPU only, no admin, no GPU) embedding the full 72486 chunks of the Anthropic docs corpus did not complete in 50+ minutes of wall-clock. The corpus is English-only, so the multilingual capacity of bge-m3 is unused weight.
+
+### Decision
+
+Use `BAAI/bge-small-en-v1.5` — 384-dim, English-only, ~5× faster on CPU. Update `EMBEDDING_DIM` in the embedder and `vector(384)` in the schema.
+
+### Alternatives considered
+
+- **bge-m3** (status quo): too slow on CPU for this corpus.
+- **bge-base-en-v1.5** (768-dim): middle ground, ~3× faster than m3.
+- **OpenAI text-embedding-3-small** (1536-dim, hosted): trivial cost (~$0.002 for full corpus) and ~10× faster than local CPU, but adds an API dependency, account, and key handling.
+- **bge-small-en-v1.5 (chosen)**: zero external dependency, runs in seconds per batch, MTEB English benchmarks within ~2 % of bge-m3 for retrieval. Acceptable for this use case.
+
+### Consequences
+
+- (+) Ingest fits in minutes, not hours, on the same hardware.
+- (+) Smaller index footprint in pgvector (384 floats × 4 bytes = 1.5 KB/row vs 4 KB/row).
+- (+) Reranker (`bge-reranker-v2-m3`) is unchanged, so final relevance after rerank is largely preserved.
+- (−) English-only corpus assumption is now hard-coded. Re-ingesting non-English content would require switching back to a multilingual model.
+
+### How we'll measure
+
+After re-ingest: report full-corpus elapsed time. Run the eval suite and compare `avg_topic_coverage` / `avg_citation_match` against pre-switch baselines — drop must be < 5 % to keep the choice.
+
