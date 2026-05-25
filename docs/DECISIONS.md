@@ -259,3 +259,44 @@ Use `BAAI/bge-small-en-v1.5` — 384-dim, English-only, ~5× faster on CPU. Upda
 
 After re-ingest: report full-corpus elapsed time. Run the eval suite and compare `avg_topic_coverage` / `avg_citation_match` against pre-switch baselines — drop must be < 5 % to keep the choice.
 
+---
+
+## ADR-009 — Switch reranker from `bge-reranker-v2-m3` to `ms-marco-MiniLM-L-6-v2`
+
+**Date**: 2026-05-25
+**Status**: Accepted (supersedes reranker choice in ADR-002)
+
+### Context
+
+Profiling the live `hybrid_search` against Neon over real queries:
+
+```
+Q="How do I stream messages?"
+  embed=187ms  dense=1116ms  sparse=3ms  fuse=0.2ms  rerank=99854ms  TOTAL=101s
+Q="How does prompt caching work?"
+  embed=79ms   dense=884ms   sparse=3ms  fuse=0.3ms  rerank=155914ms TOTAL=157s
+```
+
+The cross-encoder reranker accounts for ~99.8 % of the latency. `BAAI/bge-reranker-v2-m3` is a 3 GB multilingual model — strong but ~0.1 pairs/second on CPU. Unacceptable for the system to be demoable.
+
+### Decision
+
+Use `cross-encoder/ms-marco-MiniLM-L-6-v2` (22 MB, English-only). The corpus is already English-only after ADR-008, so the multilingual capacity of the previous reranker was already unused weight.
+
+### Alternatives considered
+
+- **Status quo (`bge-reranker-v2-m3`)**: rejected — 100s+ per query in CPU.
+- **`BAAI/bge-reranker-base`** (~280 MB): ~5× faster than m3, still in the seconds range per query in CPU.
+- **`cross-encoder/ms-marco-MiniLM-L-6-v2` (chosen)**: 22 MB, ~50–100 pairs/sec in CPU, well-known MS-MARCO baseline still competitive on BEIR.
+- **No reranker, take dense top-K directly**: faster but kills the "hybrid + rerank" architecture that ADR-002 justifies.
+
+### Consequences
+
+- (+) Expected per-query latency drop from ~100 s → < 1 s in CPU (≈ 300× speedup).
+- (+) Tiny model = trivial deploy footprint, no GPU needed even for production.
+- (−) MS-MARCO is trained on web Q&A, slightly different distribution than dev documentation. Eval suite (ADR-004) is the safety net: if `avg_citation_match` drops, revisit.
+
+### How we'll measure
+
+Re-run the bench script after the switch; record per-stage timings and the new TOTAL. Re-run the eval suite once an `ANTHROPIC_API_KEY` is wired; compare `avg_citation_match` and `avg_topic_coverage` against the pre-switch baseline. Drop must be < 5 % to keep the choice.
+
