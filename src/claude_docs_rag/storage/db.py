@@ -12,8 +12,10 @@ from claude_docs_rag.settings import settings
 
 
 @asynccontextmanager
-async def connect() -> AsyncIterator[psycopg.AsyncConnection]:
-    """Async connection with pgvector type adapters registered."""
+async def connect(*, register_vector: bool = True) -> AsyncIterator[psycopg.AsyncConnection]:
+    """Async connection. By default registers pgvector adapters — disable for
+    schema-bootstrap connections that run CREATE EXTENSION vector themselves."""
     async with await psycopg.AsyncConnection.connect(settings.postgres_dsn) as conn:
-        await register_vector_async(conn)
+        if register_vector:
+            await register_vector_async(conn)
         yield conn

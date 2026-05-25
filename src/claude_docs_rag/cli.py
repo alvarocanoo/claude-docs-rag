@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 
 import typer
 from rich.console import Console
+
+# psycopg's async mode is incompatible with Windows' default ProactorEventLoop.
+# Force the Selector-based policy so AsyncConnection.connect works.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 app = typer.Typer(help="claude-docs-rag CLI")
 console = Console()
@@ -36,6 +42,24 @@ def init_db() -> None:
         await apply_schema()
         n = await count_documents()
         console.print(f"[green]Schema applied.[/green] documents row count: {n}")
+
+    asyncio.run(_run())
+
+
+@app.command("check-db")
+def check_db() -> None:
+    """Diagnostic: print extensions, schema columns and row count."""
+    from claude_docs_rag.storage.vector_store import describe_storage
+
+    async def _run() -> None:
+        info = await describe_storage()
+        console.print("[bold]Extensions[/bold]")
+        for name, ver in info.extensions.items():
+            console.print(f"  - {name} {ver}")
+        console.print("[bold]documents columns[/bold]")
+        for name, dtype in info.columns:
+            console.print(f"  - {name:18} {dtype}")
+        console.print(f"[bold]row count[/bold]: {info.documents_count}")
 
     asyncio.run(_run())
 

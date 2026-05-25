@@ -19,8 +19,16 @@ class RetrievedChunk(BaseModel):
     score: float
 
 
+class StorageInfo(BaseModel):
+    extensions: dict[str, str]
+    columns: list[tuple[str, str]]
+    documents_count: int
+
+
 async def apply_schema() -> None:
-    async with connect() as conn, conn.cursor() as cur:
+    # Schema bootstrap runs CREATE EXTENSION vector — skip vector adapter
+    # registration (it would fail on a fresh DB where the type doesn't exist yet).
+    async with connect(register_vector=False) as conn, conn.cursor() as cur:
         await cur.execute(SCHEMA_SQL)
         await conn.commit()
 
@@ -30,6 +38,28 @@ async def count_documents() -> int:
         await cur.execute("SELECT COUNT(*) FROM documents")
         row = await cur.fetchone()
         return int(row[0]) if row else 0
+
+
+async def describe_storage() -> StorageInfo:
+    """Diagnostic: list extensions + columns + row count."""
+    async with connect(register_vector=False) as conn, conn.cursor() as cur:
+        await cur.execute(
+            "SELECT extname, extversion FROM pg_extension WHERE extname IN ('vector','pg_trgm')"
+        )
+        ext_rows = await cur.fetchall()
+        await cur.execute(
+            "SELECT column_name, data_type FROM information_schema.columns "
+            "WHERE table_name = 'documents' ORDER BY ordinal_position"
+        )
+        col_rows = await cur.fetchall()
+        await cur.execute("SELECT COUNT(*) FROM documents")
+        count_row = await cur.fetchone()
+
+    return StorageInfo(
+        extensions={r[0]: r[1] for r in ext_rows},
+        columns=[(c[0], c[1]) for c in col_rows],
+        documents_count=int(count_row[0]) if count_row else 0,
+    )
 
 
 async def upsert_chunks(chunks: list[Chunk]) -> int:
