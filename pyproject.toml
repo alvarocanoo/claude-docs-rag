@@ -29,6 +29,7 @@ dependencies = [
     "beautifulsoup4>=4.13,<5.0",
     "lxml>=6.0,<7.0",
     "tiktoken>=0.10,<1.0",
+    "numpy>=2.0,<3.0",
 ]
 
 [project.optional-dependencies]
