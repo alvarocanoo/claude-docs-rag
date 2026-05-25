@@ -162,6 +162,42 @@ def eval_cmd(
 
 
 @app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(8000, "--port"),
+    reload: bool = typer.Option(False, "--reload", help="Auto-reload (dev only)."),
+) -> None:
+    """Run the FastAPI HTTP server (uvicorn)."""
+    import uvicorn
+
+    # On Windows the default ProactorEventLoop breaks psycopg async, and
+    # uvicorn's `loop="asyncio"` flag only disables uvloop without forcing
+    # Selector. Pre-create a SelectorEventLoop and hand it to Server.
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        config = uvicorn.Config(
+            "claude_docs_rag.api.server:app",
+            host=host,
+            port=port,
+            reload=reload,
+            log_level="info",
+            loop="asyncio",
+        )
+        server = uvicorn.Server(config)
+        loop.run_until_complete(server.serve())
+    else:
+        uvicorn.run(
+            "claude_docs_rag.api.server:app",
+            host=host,
+            port=port,
+            reload=reload,
+            log_level="info",
+        )
+
+
+@app.command()
 def ask(
     question: str,
     model: str | None = typer.Option(None, "--model", "-m", help="Override model id."),
