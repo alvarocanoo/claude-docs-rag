@@ -35,23 +35,20 @@ jobs:
       - name: Pytest (smoke + unit)
         run: uv run pytest -m "not evals" --cov=src --cov-report=term-missing
 
-  docker-build:
+  docker-lint:
+    # Lightweight check: validates Dockerfile syntax + best practices without
+    # running the full build (torch + sentence-transformers wheels make the
+    # full build 15+ min on GHA free runners). A real build runs on deploy.
     runs-on: ubuntu-latest
     needs: lint-and-test
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build image (no push)
-        uses: docker/build-push-action@v6
+      - name: Hadolint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
         with:
-          context: .
-          push: false
-          tags: claude-docs-rag:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          dockerfile: Dockerfile
+          format: tty
+          failure-threshold: error
 
   evals:
     runs-on: ubuntu-latest
