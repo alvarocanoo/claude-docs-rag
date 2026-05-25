@@ -4,6 +4,10 @@
 
 **Status**: ingest pipeline and hybrid retrieval running against a real Neon Postgres + pgvector backend. Agent (`cdrag ask`) ready — needs `ANTHROPIC_API_KEY` to demo. Eval suite ready — same. CI green.
 
+![claude-docs-rag UI](docs/images/ui-search.png)
+
+> Real screenshot: Next.js 16 + Tailwind 4 frontend hitting the FastAPI `/search` endpoint with the BM25 + dense + cross-encoder pipeline against 42,248 chunks of the Anthropic Claude API docs. Latency, rerank scores, and result URLs are unmocked.
+
 ---
 
 ## Why this exists
@@ -28,7 +32,7 @@ If you're an engineer reviewing this for hiring purposes, the most interesting f
 |---------------------------------|--------|--------------------------------------------------------------------|
 | CI on GitHub Actions            | green  | ruff, mypy --strict (25 files), pytest 35/35                       |
 | Neon serverless Postgres        | green  | pgvector 0.8.0 + pg_trgm 1.6, vector(384) HNSW index               |
-| Ingest (incremental, idempotent)| green  | 5546 chunks of `platform.claude.com/docs` ingested, more in flight |
+| Ingest (incremental, idempotent)| green  | 42,248 chunks of `platform.claude.com/docs` ingested into Neon Postgres |
 | BM25 index (`bm25s`)            | green  | Built over the chunks, persisted under `data/bm25_index/`          |
 | Hybrid retrieval                | green  | 5 real queries via HTTP /search → top-3 relevant, P95 ~3.9 s        |
 | FastAPI HTTP server             | green  | `cdrag serve` → /healthz, /search, /ask, /metrics, lifespan warmup  |
