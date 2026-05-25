@@ -57,3 +57,8 @@ models/
 
 # Notebooks
 .ipynb_checkpoints/
+
+# Frontend
+web/node_modules/
+web/.next/
+web/out/

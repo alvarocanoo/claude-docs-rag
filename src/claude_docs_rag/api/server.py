@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from claude_docs_rag import __version__
@@ -133,6 +134,14 @@ def create_app() -> FastAPI:
         version=__version__,
         description="Hybrid RAG over Anthropic Claude API docs.",
         lifespan=_lifespan,
+    )
+    # Permissive CORS for the local dev frontend. In production this should be
+    # tightened to the actual deploy origin.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_methods=["GET", "POST"],
+        allow_headers=["*"],
     )
     _init_state(app)
 
