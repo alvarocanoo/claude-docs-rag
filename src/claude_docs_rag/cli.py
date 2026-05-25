@@ -125,5 +125,41 @@ def search(query: str, k: int = typer.Option(5, "--k", help="Number of results t
         console.print(f"     excerpt: {preview}...")
 
 
+@app.command()
+def ask(
+    question: str,
+    model: str | None = typer.Option(None, "--model", "-m", help="Override model id."),
+    k: int = typer.Option(5, "--k", help="Top-K reranked chunks fed to the model."),
+    max_tokens: int = typer.Option(1024, "--max-tokens"),
+) -> None:
+    """End-to-end RAG: hybrid retrieve -> Claude answer with citations."""
+    from claude_docs_rag.agent.pipeline import answer_question
+
+    result = asyncio.run(
+        answer_question(question, model=model, top_k_rerank=k, max_tokens=max_tokens)
+    )
+
+    console.print(f"\n[bold]Q:[/bold] {result.question}")
+    console.print("\n[bold]Answer:[/bold]")
+    console.print(result.answer)
+
+    if result.citations:
+        console.print("\n[bold]Citations:[/bold]")
+        for cit in result.citations:
+            console.print(f"  [{cit.chunk_id}] {cit.section_path[:80]}")
+            console.print(f"      {cit.source_url}")
+
+    call = result.call
+    console.print(
+        f"\n[dim]model={call.model} | "
+        f"input={call.input_tokens} out={call.output_tokens} "
+        f"cache_write={call.cache_creation_tokens} cache_read={call.cache_read_tokens} | "
+        f"cost=${call.cost_usd:.5f} | "
+        f"retrieval={result.timings.get('retrieval', 0):.2f}s "
+        f"gen={result.timings.get('generation', 0):.2f}s "
+        f"total={result.latency_seconds:.2f}s[/dim]"
+    )
+
+
 if __name__ == "__main__":
     app()
