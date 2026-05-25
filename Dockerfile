@@ -43,12 +43,12 @@ COPY src/ ./src/
 COPY scripts/ ./scripts/
 COPY evals/ ./evals/
 
-# Pre-cache the small embedding + reranker models at build time so the first
-# request doesn't pay the download cost. ~80 MB combined.
-RUN mkdir -p $HF_HOME && \
-    python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \
-SentenceTransformer('BAAI/bge-small-en-v1.5'); \
-CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
+# Model weights (~80 MB combined) are downloaded on first server startup by
+# the lifespan warmup. To pre-cache them at build time instead (predictable
+# but slower build), add:
+#   RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \
+#       SentenceTransformer('BAAI/bge-small-en-v1.5'); \
+#       CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
 
 RUN chown -R app:app /app
 USER app
