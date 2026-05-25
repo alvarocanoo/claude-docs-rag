@@ -30,20 +30,20 @@ async def main() -> None:
     print("Warming up...")
     t0 = time.perf_counter()
     _ = embed_texts(["warmup"])
-    print(f"  embedder cold: {(time.perf_counter() - t0)*1000:.0f} ms")
+    print(f"  embedder cold: {(time.perf_counter() - t0) * 1000:.0f} ms")
 
     t0 = time.perf_counter()
     _ = sparse.search("warmup", k=5)
-    print(f"  sparse cold:   {(time.perf_counter() - t0)*1000:.0f} ms")
+    print(f"  sparse cold:   {(time.perf_counter() - t0) * 1000:.0f} ms")
 
     t0 = time.perf_counter()
     vec = embed_texts(["warmup"])[0]
     _ = await search_semantic(vec, k=5)
-    print(f"  dense cold:    {(time.perf_counter() - t0)*1000:.0f} ms")
+    print(f"  dense cold:    {(time.perf_counter() - t0) * 1000:.0f} ms")
 
     t0 = time.perf_counter()
     _ = rerank("warmup", ["passage one", "passage two"])
-    print(f"  rerank cold:   {(time.perf_counter() - t0)*1000:.0f} ms")
+    print(f"  rerank cold:   {(time.perf_counter() - t0) * 1000:.0f} ms")
 
     print("\n=== Warm timings, 20 candidates -> rerank top-5 ===")
     for q in queries:
@@ -78,9 +78,11 @@ async def main() -> None:
         t_rerank = (time.perf_counter() - t) * 1000
 
         total = t_embed + t_dense + t_sparse + t_fuse + t_rerank
-        print(f"  embed={t_embed:6.0f}ms  dense={t_dense:6.0f}ms  sparse={t_sparse:6.0f}ms  "
-              f"fuse={t_fuse:5.1f}ms  rerank={t_rerank:7.0f}ms ({len(passages)} passages)  "
-              f"TOTAL={total:7.0f}ms")
+        print(
+            f"  embed={t_embed:6.0f}ms  dense={t_dense:6.0f}ms  sparse={t_sparse:6.0f}ms  "
+            f"fuse={t_fuse:5.1f}ms  rerank={t_rerank:7.0f}ms ({len(passages)} passages)  "
+            f"TOTAL={total:7.0f}ms"
+        )
 
 
 if __name__ == "__main__":
