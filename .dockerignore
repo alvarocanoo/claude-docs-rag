@@ -17,7 +17,7 @@ data/
 # docs / tests not needed in runtime image
 docs/
 tests/
-README.md
+# README.md is required by hatchling (declared in pyproject.toml), keep it.
 
 # IDE / OS noise
 .vscode/
