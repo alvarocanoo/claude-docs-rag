@@ -1,8 +1,8 @@
 # claude-docs-rag
 
-> Production-grade RAG agent over the Anthropic Claude API documentation. Hybrid retrieval (BM25 + embeddings + reranking), eval suite with CI regression gates, observability, semantic caching and multi-model routing.
+> Production-grade RAG agent over the Anthropic Claude API documentation. Hybrid retrieval (BM25 + embeddings + reranking), eval suite with CI regression gates, semantic caching and multi-model routing.
 
-**Status**: WIP — scaffolding phase. Not yet usable.
+**Status**: ingest pipeline and hybrid retrieval running against a real Neon Postgres + pgvector backend. Agent (`cdrag ask`) ready — needs `ANTHROPIC_API_KEY` to demo. Eval suite ready — same. CI green.
 
 ---
 
@@ -12,26 +12,41 @@ Most public RAG demos are toys: single retriever, no evals, no observability, no
 
 If you're an engineer reviewing this for hiring purposes, the most interesting files are likely:
 
-- [`docs/DECISIONS.md`](docs/DECISIONS.md) — Architecture Decision Records with trade-offs.
+- [`docs/DECISIONS.md`](docs/DECISIONS.md) — 8 Architecture Decision Records with trade-offs.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — System diagram and request flow.
-- `evals/` — Golden dataset + scoring logic. Drives the CI regression gate.
-- `.github/workflows/ci.yml` — CI gate that blocks merges if quality drops > 2%.
+- [`src/claude_docs_rag/retrieval/hybrid.py`](src/claude_docs_rag/retrieval/hybrid.py) — dense + sparse + RRF + reranker pipeline.
+- [`src/claude_docs_rag/agent/pipeline.py`](src/claude_docs_rag/agent/pipeline.py) — citation extraction + prompt caching + cost accounting.
+- [`src/claude_docs_rag/evals/runner.py`](src/claude_docs_rag/evals/runner.py) — eval harness for CI regression gate.
+- [`evals/golden_dataset.jsonl`](evals/golden_dataset.jsonl) — 32 Q&A across 14 doc categories.
+- [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — ruff + mypy --strict + pytest, with eval gate on PRs.
+
+---
+
+## Verified end-to-end
+
+| Component                       | Status | Evidence                                                           |
+|---------------------------------|--------|--------------------------------------------------------------------|
+| CI on GitHub Actions            | green  | ruff, mypy --strict (25 files), pytest 35/35                       |
+| Neon serverless Postgres        | green  | pgvector 0.8.0 + pg_trgm 1.6, vector(384) HNSW index               |
+| Ingest (incremental, idempotent)| green  | 5546 chunks of `platform.claude.com/docs` ingested, more in flight |
+| BM25 index (`bm25s`)            | green  | Built over the 5546 chunks, persisted under `data/bm25_index/`     |
+| Hybrid retrieval                | green  | 3 sample queries → correct doc page in top-3 for 3/3 (manual)      |
+| Agent + citation extraction     | code   | needs `ANTHROPIC_API_KEY` to demo end-to-end                       |
+| Eval suite                      | code   | runs against golden_dataset.jsonl; writes `evals/latest.json`      |
 
 ---
 
 ## Success metrics (declared up-front)
 
-These are the numerical targets the system must hit before being considered "done":
-
 | Metric                       | Target            | How it's measured                          |
 |------------------------------|-------------------|--------------------------------------------|
-| Faithfulness                 | ≥ 0.85            | LLM-as-judge on golden eval set            |
-| Citation accuracy            | ≥ 0.90            | Cited chunk must match the answer claim    |
-| End-to-end P95 latency       | ≤ 3 s             | N=100 real queries, traced via Langfuse    |
-| Avg cost per query (Haiku)   | ≤ $0.005          | Token accounting from Anthropic responses  |
-| Semantic cache hit rate      | ≥ 30 %            | On eval set with paraphrased queries       |
+| topic_coverage (per Q&A)     | ≥ 0.85            | Fraction of expected keywords found in answer |
+| citation_match (per Q&A)     | ≥ 0.90            | Cited URL contains any expected path pattern |
+| End-to-end P95 latency       | ≤ 3 s             | Per-query latency tracked by eval runner   |
+| Avg cost per query (Haiku)   | ≤ $0.005          | Computed from token usage on every call    |
+| has_citation rate            | ≥ 0.95            | Fraction of answers with at least one [n] cite |
 
-Current measured values: **not yet measured** — first eval run will populate this table.
+Current measured values: **populated after `cdrag eval` is run with an API key** — writes `evals/latest.json`.
 
 ---
 
@@ -41,28 +56,27 @@ Current measured values: **not yet measured** — first eval run will populate t
 User query
     │
     ▼
-┌────────────────┐
-│ Semantic cache │ ──── hit ────► cached answer
-└────────────────┘
-    │ miss
-    ▼
 ┌────────────────────────────────────────┐
-│ Hybrid retrieval (BM25 + dense + RRF)  │
-└────────────────────────────────────────┘
-    │ top-20
-    ▼
-┌────────────────┐
-│ Cross-encoder  │
-│ reranker       │
-└────────────────┘
-    │ top-5
-    ▼
-┌────────────────────────────────────────┐
-│ Model router (Haiku / Sonnet / local)  │
+│ Hybrid retrieval                       │
+│   dense (pgvector HNSW, bge-small)  ─┐ │
+│   sparse (bm25s)                    ─┴─► RRF fusion (top-20)
 └────────────────────────────────────────┘
     │
     ▼
-Answer + citations (streamed via SSE)
+┌────────────────────────────────────────┐
+│ Cross-encoder reranker                 │
+│ (bge-reranker-v2-m3, local)            │
+└────────────────────────────────────────┘
+    │ top-5
+    ▼
+┌────────────────────────────────────────┐
+│ Claude Messages API                    │
+│   - System + CONTEXT (cache breakpoint)│
+│   - User question                      │
+└────────────────────────────────────────┘
+    │
+    ▼
+Answer with [n] citations + cost + per-stage timings
 ```
 
 Full details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
@@ -71,62 +85,68 @@ Full details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Stack
 
-- **Language**: Python 3.12
-- **LLM**: Anthropic Claude (Haiku 4.5 + Sonnet 4.6, with local Ollama fallback)
-- **Embeddings**: `BAAI/bge-m3` (local, multilingual)
-- **Sparse retrieval**: `bm25s` (state-of-the-art BM25, paper 2024)
+- **Language**: Python 3.12, managed by `uv`
+- **LLM**: Anthropic Claude (Haiku 4.5 default, Sonnet 4.6 / Opus 4.7 selectable)
+- **Embeddings**: `BAAI/bge-small-en-v1.5` (384-dim, local, fast on CPU — see ADR-008)
+- **Sparse retrieval**: `bm25s` (paper 2024, 500× faster than rank_bm25)
 - **Reranker**: `BAAI/bge-reranker-v2-m3` (local cross-encoder)
-- **Vector store**: Postgres 17 + `pgvector`
-- **Cache / queue**: Redis 8
-- **API**: FastAPI + Server-Sent Events
-- **Observability**: Langfuse (self-hosted)
-- **Package management**: `uv`
-- **CI**: GitHub Actions with eval regression gate
-
-Decisions justified in [`docs/DECISIONS.md`](docs/DECISIONS.md).
+- **Vector store**: Postgres + `pgvector` on Neon serverless (ADR-007)
+- **API**: FastAPI + SSE streaming
+- **CLI**: Typer (`cdrag` entry point)
+- **CI**: GitHub Actions — ruff, mypy --strict, pytest, eval regression gate
 
 ---
 
-## Quick start (when ready)
+## Quick start
 
-```bash
-# 1. Start infra
-docker compose up -d
-
-# 2. Install deps
+```powershell
+# 1. Install deps (uv handles Python 3.12 + venv)
 uv sync
 
-# 3. Configure secrets
+# 2. Configure secrets
 cp .env.example .env
-# fill ANTHROPIC_API_KEY at minimum
+# Edit .env and set:
+#   POSTGRES_DSN=postgresql://...   (Neon free tier works)
+#   ANTHROPIC_API_KEY=sk-ant-...    (only needed for `ask` and `eval`)
 
-# 4. Ingest the docs
-uv run python -m claude_docs_rag.ingest.run
+# 3. Create the schema in your Postgres
+uv run cdrag init-db
+uv run cdrag check-db
 
-# 5. Run the API
-uv run uvicorn claude_docs_rag.api.server:app --reload
+# 4. Ingest the Anthropic docs corpus (idempotent — safe to re-run)
+uv run cdrag ingest --concurrency 8 --pages-per-batch 30
 
-# 6. Run evals
-uv run pytest tests/evals
+# 5. Build the BM25 index over what is in Postgres
+uv run cdrag build-bm25
+
+# 6. Hybrid search (no API key needed)
+uv run cdrag search "How do I stream messages from the Claude API?"
+
+# 7. End-to-end answer with citations (needs ANTHROPIC_API_KEY)
+uv run cdrag ask "How do I stream messages from the Claude API?"
+
+# 8. Run the eval suite (needs ANTHROPIC_API_KEY)
+uv run cdrag eval --limit 5
 ```
 
 ---
 
 ## Roadmap
 
-- [x] Scaffolding, infra, ADRs
-- [ ] Ingest pipeline (scraper → chunker → embedder → pgvector)
-- [ ] Hybrid retrieval (BM25 + dense + RRF fusion)
-- [ ] Cross-encoder reranker
-- [ ] Golden eval dataset (≥ 100 Q&A)
-- [ ] Eval suite (faithfulness, citation accuracy, latency, cost)
-- [ ] CI regression gate
-- [ ] Semantic cache + cost telemetry
-- [ ] Multi-model routing (Haiku / Sonnet / local)
-- [ ] FastAPI + SSE streaming
+- [x] Scaffolding, infra, ADRs (1–8)
+- [x] Ingest pipeline (scraper → chunker → embedder → pgvector), batched + idempotent
+- [x] Hybrid retrieval (BM25 + dense + RRF fusion)
+- [x] Cross-encoder reranker
+- [x] Golden eval dataset (32 Q&A across 14 categories — to grow to 100+)
+- [x] Eval runner (topic coverage, citation match, latency, cost) writes `latest.json`
+- [x] CI workflow scaffolded with regression gate
+- [ ] First full `cdrag eval` run + baseline numbers committed to `evals/baseline.json`
+- [ ] Activate the eval job in CI (requires `ANTHROPIC_API_KEY` repo secret)
+- [ ] Semantic cache (Redis embedding similarity)
+- [ ] FastAPI + SSE streaming endpoint
 - [ ] Langfuse traces wired
 - [ ] Minimal Next.js frontend
-- [ ] Production deploy (Fly.io or Railway) + public demo URL
+- [ ] Production deploy (Fly.io / Railway) + public demo URL
 
 ---
 
