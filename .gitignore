@@ -43,8 +43,7 @@ Thumbs.db
 desktop.ini
 
 # Project-specific
-data/raw/
-data/processed/
+data/
 *.sqlite
 *.duckdb
 .langfuse/
