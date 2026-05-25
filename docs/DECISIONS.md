@@ -82,7 +82,7 @@ Need to store ~10k document chunks with 1024-dim embeddings and run cosine-simil
 
 ### Decision
 
-Postgres 17 + `pgvector` with HNSW index.
+Postgres 17 + `pgvector` with HNSW index. See ADR-007 for hosting choice (Neon vs local).
 
 ### Alternatives considered
 
@@ -99,7 +99,7 @@ Postgres 17 + `pgvector` with HNSW index.
 
 ### How we'll measure
 
-Benchmark: ingest 10k chunks, run 1000 random queries. Target P95 < 100 ms on a `pg17` Docker container with 2 GB RAM.
+Benchmark: ingest 10k chunks, run 1000 random queries. Target P95 < 100 ms.
 
 ---
 
@@ -158,3 +158,70 @@ Python dependency management options have proliferated. Picking one affects ever
 - (+) CI installs go from minutes to seconds.
 - (+) Lockfile (`uv.lock`) is deterministic.
 - (−) Slightly newer tool — minor docs friction for contributors who haven't used it. Mitigated by README quick start.
+
+---
+
+## ADR-006 — Anthropic docs source: `llms.txt` index + per-page `.md`
+
+**Date**: 2026-05-25
+**Status**: Accepted
+
+### Context
+
+Need to ingest the Anthropic Claude API docs. Options range from HTML scraping (fragile, slow, needs JS rendering) to a single bulk file.
+
+Anthropic publishes both:
+- `https://platform.claude.com/llms.txt` — 166 KB index listing 1541 English doc pages by URL.
+- `https://platform.claude.com/llms-full.txt` — 66 MB monolithic markdown of all pages.
+- A `.md` endpoint per individual page (e.g. `/docs/en/intro.md`).
+
+### Decision
+
+Use `llms.txt` as the index and download each page individually via its `.md` endpoint, with bounded concurrency and on-disk caching.
+
+### Alternatives considered
+
+- **Scrape HTML**: needs Playwright for SPA content, slow (~1 s/page), fragile to UI changes. Rejected.
+- **Bulk download `llms-full.txt`**: 1 HTTP request, simple — but the monolith has no clean per-page boundaries, complicating metadata (URL, section) and per-page caching/retry. Rejected.
+- **Per-page `.md` from `llms.txt` (chosen)**: each page becomes a unit with stable URL, title and section. Granular caching, retry, idempotent re-ingest.
+
+### Consequences
+
+- (+) Metadata-rich: every chunk knows its source URL and section path.
+- (+) Robust to partial failures: re-running only re-downloads missing files.
+- (+) English-only filter at index level keeps the corpus focused and consistent.
+- (−) 1541 HTTP requests. Mitigated: concurrency 10, on-disk cache so it only happens once.
+
+---
+
+## ADR-007 — Neon serverless Postgres for dev and prod
+
+**Date**: 2026-05-25
+**Status**: Accepted
+
+### Context
+
+ADR-003 picked pgvector. Hosting it was originally docker-compose locally + a managed Postgres in prod (Supabase/Neon/Fly Postgres). Reality on the dev box: no admin privileges → cannot install WSL2 → Docker Desktop won't start its Linux engine.
+
+### Decision
+
+Use **Neon serverless Postgres** for both development and production, accessed via a single `POSTGRES_DSN` connection string in `.env`.
+
+### Alternatives considered
+
+- **Local Postgres native install**: needs admin for `winget install PostgreSQL.PostgreSQL.17` and a separate pgvector binary. Operationally heavier.
+- **WSL2 + Docker**: requires admin + system reboot.
+- **SQLite + sqlite-vec**: drops pgvector entirely, breaks ADR-003 and reduces portfolio signal.
+- **Neon free tier (chosen)**: zero local install, pgvector preinstalled, 0.5 GB free is ample (~10k chunks × 1024 floats ≈ 40 MB), database branching for per-PR eval isolation in CI.
+
+### Consequences
+
+- (+) Same backend in dev, CI, prod. No "works on my machine".
+- (+) Database branching: each PR can spin up an isolated branch from `main` data → evals run against real data without polluting it.
+- (+) Connection pooler included → safe for serverless workers.
+- (−) Requires internet for dev. Acceptable for this project.
+- (−) Cold-start latency on free tier (~0.5-2 s after idle). Mitigated for evals by keep-alive query at CI start.
+
+### How we'll measure
+
+Cost: must stay inside free tier through development. Latency: P95 retrieval still ≤ 100 ms once warm.

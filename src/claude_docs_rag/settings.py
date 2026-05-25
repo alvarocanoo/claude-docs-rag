@@ -16,6 +16,9 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str = Field(default="")
 
+    # Either provide POSTGRES_DSN (e.g. Neon connection string) — wins if set —
+    # or the individual fields (local docker compose default).
+    postgres_dsn_override: str = Field(default="", alias="POSTGRES_DSN")
     postgres_host: str = "localhost"
     postgres_port: int = 5432
     postgres_user: str = "cdrag"
@@ -42,6 +45,8 @@ class Settings(BaseSettings):
 
     @property
     def postgres_dsn(self) -> str:
+        if self.postgres_dsn_override:
+            return self.postgres_dsn_override
         return (
             f"postgresql://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
