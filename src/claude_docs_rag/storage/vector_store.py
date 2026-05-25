@@ -40,6 +40,14 @@ async def count_documents() -> int:
         return int(row[0]) if row else 0
 
 
+async def iter_corpus() -> list[tuple[str, int, str]]:
+    """Stream every (source_url, chunk_index, content) — used to build BM25 index."""
+    async with connect() as conn, conn.cursor() as cur:
+        await cur.execute("SELECT source_url, chunk_index, content FROM documents ORDER BY id")
+        rows = await cur.fetchall()
+    return [(r[0], int(r[1]), r[2]) for r in rows]
+
+
 async def describe_storage() -> StorageInfo:
     """Diagnostic: list extensions + columns + row count."""
     async with connect(register_vector=False) as conn, conn.cursor() as cur:

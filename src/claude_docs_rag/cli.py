@@ -90,5 +90,40 @@ def ingest(
     console.print(f"  elapsed         = {report.elapsed_seconds:.1f}s")
 
 
+@app.command("build-bm25")
+def build_bm25() -> None:
+    """Build a BM25 index from the documents table and persist it to disk."""
+    from claude_docs_rag.retrieval.sparse import build_index
+    from claude_docs_rag.storage.vector_store import iter_corpus
+
+    async def _run() -> list[tuple[str, int, str]]:
+        return await iter_corpus()
+
+    corpus = asyncio.run(_run())
+    console.print(f"Loaded {len(corpus)} chunks from Postgres. Building BM25 index...")
+    build_index(corpus)
+    console.print("[green]BM25 index built and persisted under data/bm25_index/[/green]")
+
+
+@app.command()
+def search(query: str, k: int = typer.Option(5, "--k", help="Number of results to print.")) -> None:
+    """Hybrid search (dense + BM25 + RRF + cross-encoder rerank)."""
+    from claude_docs_rag.retrieval.hybrid import hybrid_search
+
+    results = asyncio.run(hybrid_search(query, top_k_rerank=k))
+    console.print(f"\n[bold]Q:[/bold] {query}")
+    if not results:
+        console.print("[red]No results.[/red]")
+        return
+    for i, r in enumerate(results, 1):
+        console.print(
+            f"\n  {i}. [rerank={r.rerank_score:+.3f} fusion={r.fusion_score:.3f}] {r.title}"
+        )
+        console.print(f"     section: {r.section_path[:90]}")
+        console.print(f"     url:     {r.source_url}")
+        preview = " ".join(r.content.split())[:200]
+        console.print(f"     excerpt: {preview}...")
+
+
 if __name__ == "__main__":
     app()
