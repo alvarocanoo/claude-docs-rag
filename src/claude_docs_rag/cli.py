@@ -8,10 +8,14 @@ import sys
 import typer
 from rich.console import Console
 
-# psycopg's async mode is incompatible with Windows' default ProactorEventLoop.
-# Force the Selector-based policy so AsyncConnection.connect works.
+# Windows tweaks (no-ops elsewhere):
+# 1. psycopg async is incompatible with the default ProactorEventLoop.
+# 2. Console defaults to cp1252, which crashes on UTF-8 output (e.g. → arrows).
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
 app = typer.Typer(help="claude-docs-rag CLI")
 console = Console()
