@@ -1,0 +1,26 @@
+# keep image small + reproducible
+.git
+.github
+.venv
+.uv
+.ruff_cache
+.mypy_cache
+.pytest_cache
+__pycache__
+*.pyc
+data/
+*.log
+.env
+.env.local
+.env.*.local
+
+# docs / tests not needed in runtime image
+docs/
+tests/
+README.md
+
+# IDE / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

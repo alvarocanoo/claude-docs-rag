@@ -29,24 +29,30 @@ If you're an engineer reviewing this for hiring purposes, the most interesting f
 | CI on GitHub Actions            | green  | ruff, mypy --strict (25 files), pytest 35/35                       |
 | Neon serverless Postgres        | green  | pgvector 0.8.0 + pg_trgm 1.6, vector(384) HNSW index               |
 | Ingest (incremental, idempotent)| green  | 5546 chunks of `platform.claude.com/docs` ingested, more in flight |
-| BM25 index (`bm25s`)            | green  | Built over the 5546 chunks, persisted under `data/bm25_index/`     |
-| Hybrid retrieval                | green  | 3 sample queries → correct doc page in top-3 for 3/3 (manual)      |
+| BM25 index (`bm25s`)            | green  | Built over the chunks, persisted under `data/bm25_index/`          |
+| Hybrid retrieval                | green  | 5 real queries via HTTP /search → top-3 relevant, P95 ~3.9 s        |
+| FastAPI HTTP server             | green  | `cdrag serve` → /healthz, /search, /ask, /metrics, lifespan warmup  |
 | Agent + citation extraction     | code   | needs `ANTHROPIC_API_KEY` to demo end-to-end                       |
 | Eval suite                      | code   | runs against golden_dataset.jsonl; writes `evals/latest.json`      |
 
 ---
 
-## Success metrics (declared up-front)
+## Success metrics
 
-| Metric                       | Target            | How it's measured                          |
-|------------------------------|-------------------|--------------------------------------------|
-| topic_coverage (per Q&A)     | ≥ 0.85            | Fraction of expected keywords found in answer |
-| citation_match (per Q&A)     | ≥ 0.90            | Cited URL contains any expected path pattern |
-| End-to-end P95 latency       | ≤ 3 s             | Per-query latency tracked by eval runner   |
-| Avg cost per query (Haiku)   | ≤ $0.005          | Computed from token usage on every call    |
-| has_citation rate            | ≥ 0.95            | Fraction of answers with at least one [n] cite |
+| Metric                       | Target            | Measured           | Source                            |
+|------------------------------|-------------------|--------------------|-----------------------------------|
+| topic_coverage (per Q&A)     | ≥ 0.85            | pending API key    | LLM `cdrag eval` writes latest.json |
+| citation_match (per Q&A)     | ≥ 0.90            | pending API key    | same                              |
+| **/search P95 latency**      | ≤ 3 s             | **~3.9 s** (CPU)   | live HTTP probe, 5 real queries   |
+| **rerank stage**             | -                 | **~3.2 s** / query | `scripts/bench_search.py`         |
+| **dense retrieval**          | -                 | ~0.9 s / query     | same — Neon network               |
+| **sparse + embed + fuse**    | -                 | < 0.3 s / query    | same                              |
+| Avg cost per query (Haiku)   | ≤ $0.005          | pending API key    | token accounting on every call    |
+| has_citation rate            | ≥ 0.95            | pending API key    | eval runner                       |
 
-Current measured values: **populated after `cdrag eval` is run with an API key** — writes `evals/latest.json`.
+The "pending API key" rows light up the moment an `ANTHROPIC_API_KEY` is wired —
+nothing else needs to change. Latency tuned from ~100 s/query before ADR-009
+(`bge-reranker-v2-m3`) to ~3.9 s after (`ms-marco-MiniLM-L-6-v2`).
 
 ---
 
@@ -128,6 +134,24 @@ uv run cdrag ask "How do I stream messages from the Claude API?"
 # 8. Run the eval suite (needs ANTHROPIC_API_KEY)
 uv run cdrag eval --limit 5
 ```
+
+---
+
+## Deploy
+
+A multi-stage `Dockerfile` is provided. It pre-caches the embedding + reranker
+models at build time so the first request does not pay the model download.
+
+```bash
+docker build -t claude-docs-rag .
+docker run -p 8000:8000 \
+  -e POSTGRES_DSN=postgresql://... \
+  -e ANTHROPIC_API_KEY=sk-ant-... \
+  claude-docs-rag
+```
+
+Target hosts: Fly.io (`fly launch`), Railway, or any container runtime with
+egress to Neon + Anthropic.
 
 ---
 
