@@ -73,21 +73,32 @@ def ingest(
     limit: int | None = typer.Option(None, "--limit", "-l", help="Only ingest the first N pages."),
     concurrency: int = typer.Option(10, "--concurrency", "-c", help="Parallel downloads."),
     batch_size: int = typer.Option(32, "--batch-size", "-b", help="Embedding batch size."),
+    pages_per_batch: int = typer.Option(
+        50, "--pages-per-batch", help="Pages processed per insert batch."
+    ),
+    no_skip: bool = typer.Option(False, "--no-skip", help="Re-process even pages already in DB."),
 ) -> None:
-    """Run the full ingest pipeline."""
+    """Run the ingest pipeline in page-batches (incremental, idempotent)."""
     from claude_docs_rag.ingest.pipeline import run_ingest
 
     report = asyncio.run(
-        run_ingest(limit=limit, concurrency=concurrency, embed_batch_size=batch_size)
+        run_ingest(
+            limit=limit,
+            concurrency=concurrency,
+            embed_batch_size=batch_size,
+            pages_per_batch=pages_per_batch,
+            skip_existing=not no_skip,
+        )
     )
     console.print()
     console.print("[bold]Ingest complete[/bold]")
-    console.print(f"  pages_indexed   = {report.pages_indexed}")
-    console.print(f"  pages_downloaded= {report.pages_downloaded}")
-    console.print(f"  chunks_created  = {report.chunks_created}")
-    console.print(f"  chunks_embedded = {report.chunks_embedded}")
-    console.print(f"  chunks_stored   = {report.chunks_stored}")
-    console.print(f"  elapsed         = {report.elapsed_seconds:.1f}s")
+    console.print(f"  pages_indexed         = {report.pages_indexed}")
+    console.print(f"  pages_skipped_existing= {report.pages_skipped_existing}")
+    console.print(f"  pages_downloaded      = {report.pages_downloaded}")
+    console.print(f"  chunks_created        = {report.chunks_created}")
+    console.print(f"  chunks_embedded       = {report.chunks_embedded}")
+    console.print(f"  chunks_stored         = {report.chunks_stored}")
+    console.print(f"  elapsed               = {report.elapsed_seconds:.1f}s")
 
 
 @app.command("build-bm25")
@@ -123,6 +134,31 @@ def search(query: str, k: int = typer.Option(5, "--k", help="Number of results t
         console.print(f"     url:     {r.source_url}")
         preview = " ".join(r.content.split())[:200]
         console.print(f"     excerpt: {preview}...")
+
+
+@app.command("eval")
+def eval_cmd(
+    limit: int | None = typer.Option(
+        None, "--limit", "-l", help="Only run the first N golden items."
+    ),
+    model: str | None = typer.Option(None, "--model", "-m"),
+    k: int = typer.Option(5, "--k"),
+) -> None:
+    """Run the eval suite against the golden dataset; write evals/latest.json."""
+    from claude_docs_rag.evals.runner import run_evals
+
+    report = asyncio.run(run_evals(limit=limit, model=model, top_k_rerank=k))
+    console.print("\n[bold]Eval report[/bold]")
+    console.print(f"  n                    = {report.n}")
+    console.print(f"  avg_topic_coverage   = {report.avg_topic_coverage:.3f}")
+    console.print(f"  avg_citation_match   = {report.avg_citation_match:.3f}")
+    console.print(f"  citation_rate        = {report.citation_rate:.3f}")
+    console.print(f"  avg_latency_seconds  = {report.avg_latency_seconds:.2f}s")
+    console.print(f"  p95_latency_seconds  = {report.p95_latency_seconds:.2f}s")
+    console.print(f"  avg_cost_usd         = ${report.avg_cost_usd:.5f}")
+    console.print(f"  total_cost_usd       = ${report.total_cost_usd:.4f}")
+    console.print(f"  elapsed              = {report.elapsed_seconds:.1f}s")
+    console.print("\n[dim]Full report written to evals/latest.json[/dim]")
 
 
 @app.command()

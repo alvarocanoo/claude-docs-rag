@@ -48,6 +48,19 @@ async def iter_corpus() -> list[tuple[str, int, str]]:
     return [(r[0], int(r[1]), r[2]) for r in rows]
 
 
+async def existing_source_urls(urls: list[str]) -> set[str]:
+    """Return the subset of `urls` already present in the documents table."""
+    if not urls:
+        return set()
+    async with connect() as conn, conn.cursor() as cur:
+        await cur.execute(
+            "SELECT DISTINCT source_url FROM documents WHERE source_url = ANY(%s)",
+            (urls,),
+        )
+        rows = await cur.fetchall()
+    return {r[0] for r in rows}
+
+
 async def describe_storage() -> StorageInfo:
     """Diagnostic: list extensions + columns + row count."""
     async with connect(register_vector=False) as conn, conn.cursor() as cur:
