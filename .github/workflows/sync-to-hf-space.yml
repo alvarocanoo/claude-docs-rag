@@ -1,0 +1,72 @@
+name: sync-to-hf-space
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Only one sync at a time — HF Space deploys serialize on the receiving end.
+concurrency:
+  group: sync-hf-space
+  cancel-in-progress: false
+
+jobs:
+  push-to-hf-space:
+    runs-on: ubuntu-latest
+    # HF_TOKEN must be set as a repository secret with write access to the
+    # target Space. HF_SPACE_REPO is the destination, e.g.
+    # "alvarocano/claude-docs-rag" (HF user / Space name).
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_USER: ${{ vars.HF_USER }}
+      HF_SPACE_NAME: ${{ vars.HF_SPACE_NAME }}
+    steps:
+      - name: Skip if HF secrets/vars are missing
+        id: gate
+        run: |
+          if [ -z "$HF_TOKEN" ] || [ -z "$HF_USER" ] || [ -z "$HF_SPACE_NAME" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "HF deploy is unconfigured (set HF_TOKEN secret, HF_USER + HF_SPACE_NAME vars). Skipping."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout source repo
+        if: steps.gate.outputs.skip == 'false'
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Clone HF Space repo
+        if: steps.gate.outputs.skip == 'false'
+        run: |
+          git clone "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_USER}/${HF_SPACE_NAME}" /tmp/space
+          cd /tmp/space
+          git config user.email "deploy-bot@users.noreply.github.com"
+          git config user.name "claude-docs-rag deploy bot"
+
+      - name: Stage repo files into Space
+        if: steps.gate.outputs.skip == 'false'
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          # Wipe the Space tree except .git, then copy everything we want to
+          # ship. .gitignore in the Space repo controls what HF persists.
+          find /tmp/space -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          # Backend code, deps, infra.
+          cp -r src scripts evals pyproject.toml uv.lock README.md .python-version Dockerfile .dockerignore /tmp/space/
+          # ADRs/Arch — useful inside the Space for cross-linking.
+          [ -d docs ] && cp -r docs /tmp/space/
+          # Replace the README with the HF-flavored one (frontmatter + concise).
+          cp space/README.md /tmp/space/README.md
+
+      - name: Commit + push to HF Space
+        if: steps.gate.outputs.skip == 'false'
+        run: |
+          cd /tmp/space
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing to push."
+          else
+            git commit -m "sync from github@${GITHUB_SHA::7}"
+            git push origin main
+          fi

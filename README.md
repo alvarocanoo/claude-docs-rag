@@ -167,15 +167,19 @@ Configure a non-default backend URL with `NEXT_PUBLIC_API_BASE_URL` before
 
 ## Deploy
 
-The repo is wired for a two-host deploy:
+The repo is wired for a two-host deploy, both free-tier-friendly:
 
-- **Backend** → Fly.io (Dockerfile pre-caches model weights; `fly.toml` pinned
-  to `fra` for Neon `eu-central-1` proximity; auto-stop on idle).
+- **Backend** → Hugging Face Spaces (Docker SDK). Always-on, no card on file,
+  2 vCPU + 16 GB RAM. Sync happens automatically via
+  [`.github/workflows/sync-to-hf-space.yml`](.github/workflows/sync-to-hf-space.yml)
+  whenever `main` moves.
 - **Frontend** → Vercel (free Hobby plan; root directory `web/`).
+- **Alternative**: a Fly.io path is also wired (`fly.toml` + Dockerfile model
+  pre-cache) for anyone wanting a `*.fly.dev` subdomain. ~$2/month.
 
-Step-by-step guide with the exact `flyctl` and Vercel commands lives in
-[`docs/DEPLOY.md`](docs/DEPLOY.md). The BM25 index is bootstrapped from Postgres
-on first server start, so no `data/` directory needs to be shipped.
+Step-by-step guide (HF Space creation, GitHub secrets, Vercel import) lives in
+[`docs/DEPLOY.md`](docs/DEPLOY.md). The BM25 index bootstraps itself from
+Postgres on first server start, so no `data/` directory needs to be shipped.
 
 For a quick local container check:
 
