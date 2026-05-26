@@ -249,6 +249,12 @@ docker run -p 8000:8000 \
 
 ---
 
+## Write-ups
+
+- [`docs/posts/2026-05-26-eval-driven-rag-tuning.md`](docs/posts/2026-05-26-eval-driven-rag-tuning.md) — *Eval-driven RAG tuning: how three ADRs tripled my citation accuracy on a free-tier LLM* (2 k words; the full journey ADR-010 → ADR-011 → ADR-012 with measured ablation tables).
+
+---
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE).
