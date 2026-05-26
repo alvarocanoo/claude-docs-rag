@@ -6,7 +6,7 @@ colorTo: indigo
 sdk: docker
 app_port: 8000
 pinned: false
-short_description: Hybrid RAG over Anthropic Claude API docs (BM25 + dense + reranker).
+short_description: Hybrid RAG over the Anthropic Claude API docs.
 ---
 
 # claude-docs-rag — Hugging Face Space
