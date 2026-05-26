@@ -42,7 +42,7 @@ Most public RAG demos are toys: single retriever, no evals, no observability, no
 
 If you're an engineer reviewing this for hiring purposes, the most interesting files are likely:
 
-- [`docs/DECISIONS.md`](docs/DECISIONS.md) — 11 Architecture Decision Records with trade-offs.
+- [`docs/DECISIONS.md`](docs/DECISIONS.md) — 12 Architecture Decision Records with trade-offs.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — System diagram and request flow.
 - [`src/claude_docs_rag/retrieval/hybrid.py`](src/claude_docs_rag/retrieval/hybrid.py) — dense + sparse + RRF + reranker pipeline.
 - [`src/claude_docs_rag/agent/pipeline.py`](src/claude_docs_rag/agent/pipeline.py) — citation extraction + prompt caching + cost accounting.
@@ -72,20 +72,19 @@ If you're an engineer reviewing this for hiring purposes, the most interesting f
 
 ## Success metrics
 
-Real numbers from [`evals/baseline.json`](evals/baseline.json) — 32 Q&A, `provider=groq` `model=llama-3.1-8b-instant`, **HyDE on** (ADR-011), all on free tier.
+Real numbers from [`evals/baseline.json`](evals/baseline.json) — 32 Q&A, `provider=groq` `model=llama-3.1-8b-instant`, **HyDE + sparse-recovery on** (ADR-011 + ADR-012), all on free tier.
 
-| Metric                       | Target    | Pre-HyDE (ADR-010) | **Current** ([ADR-011](docs/DECISIONS.md))  | Source                            |
-|------------------------------|-----------|--------------------|----------------------------------------------|-----------------------------------|
-| `avg_topic_coverage`         | ≥ 0.85    | 0.526              | **0.563**  (+7 %)                            | `evals/baseline.json`             |
-| `avg_citation_match`         | ≥ 0.90    | 0.188              | **0.438**  (+133 %)                          | same                              |
-| `citation_rate`              | ≥ 0.95    | 0.312              | **0.562**  (+80 %)                           | same                              |
-| **/search P95 latency**      | ≤ 3 s     | -                  | **~3.9 s** (CPU)                             | live HTTP probe via Vercel → HF Space, 5 real queries |
-| **rerank stage**             | -         | -                  | **~3.2 s** / query                            | [`scripts/bench_search.py`](scripts/bench_search.py) |
-| **dense retrieval**          | -         | -                  | ~0.9 s / query                                | same — Neon network               |
-| **sparse + embed + fuse**    | -         | -                  | < 0.3 s / query                               | same                              |
-| Avg cost per query           | ≤ $0.005  | $0.00014           | **$0.00013** ✅                              | `baseline.json` (Groq paid-tier pricing applied; actual $ spent: 0) |
+| Metric                       | Target    | Pre-HyDE (ADR-010) | + HyDE (ADR-011) | **+ Sparse recovery ([ADR-012](docs/DECISIONS.md))**  |
+|------------------------------|-----------|--------------------|-------------------|--------------------------------------------------------|
+| `avg_topic_coverage`         | ≥ 0.85    | 0.526              | 0.563             | **0.636**  (+21 % vs ADR-010)                          |
+| `avg_citation_match`         | ≥ 0.90    | 0.188              | 0.438             | **0.594**  (+216 % vs ADR-010)                         |
+| `citation_rate`              | ≥ 0.95    | 0.312              | 0.562             | **0.688**  (+121 % vs ADR-010)                         |
+| `avg_latency_seconds`        | -         | 27.97 s            | 27.93 s           | **23.94 s**  (−14 % vs HyDE only)                      |
+| **/search P95 latency**      | ≤ 3 s     | -                  | -                 | **~3.9 s** (CPU, live HTTP via Vercel → HF Space)      |
+| **rerank stage**             | -         | -                  | -                 | **~3.2 s** / query ([`scripts/bench_search.py`](scripts/bench_search.py)) |
+| Avg cost per query           | ≤ $0.005  | $0.00014           | $0.00013          | **$0.00012**  ✅                                       |
 
-Honest read of the table: the eval suite **measured** the bottleneck (retrieval mismatches on conceptual queries pulling language-specific API reference pages), **named** the fix (ADR-011 — HyDE), **quantified** the improvement (+133 % on `citation_match` at flat latency / cost), and the next ADRs (012-014) are the remaining gap to the targets. That's what an eval suite is for.
+What an honest eval suite buys you: each column is a real committed run. ADR-011 jumped `citation_match` 2.3× by adding HyDE. ADR-012 fixed a real fusion bug (sparse-only winners were silently dropped before reranking), pushed all three guarded metrics further and shaved 14 % off the LLM-side latency. The eval suite caught a `−19 %` regression on a 5-question subset that turned out to be statistical noise — the full-corpus numbers were the real signal. See ADR-012 in [`docs/DECISIONS.md`](docs/DECISIONS.md) for the full read.
 
 The "pending API key" rows light up the moment an `ANTHROPIC_API_KEY` is wired —
 nothing else needs to change. Latency tuned from ~100 s/query before ADR-009
@@ -240,12 +239,12 @@ docker run -p 8000:8000 \
 - [x] **ADR-010** — Pluggable LLM provider (Anthropic + Groq), `LLM_PROVIDER` env var
 - [x] First full `cdrag eval` run + numbers committed to [`evals/baseline.json`](evals/baseline.json)
 - [x] Activate the eval gate in CI against `evals/baseline.json` ([PR #1 / commit `b144489`](https://github.com/alvarocanoo/claude-docs-rag/pull/1))
-- [x] **ADR-011** — HyDE (Hypothetical Document Embeddings) on the dense leg; baseline updated, **+133 % `citation_match`** at flat latency / cost
-- [x] **`POST /ask/stream`** SSE endpoint + Next.js `/chat` UI with token streaming, citations panel, and inline cost/latency meta line
-- [ ] **ADR-012** — Fix sparse-only fusion drop in `hybrid.py` (real bug, separable from HyDE)
+- [x] **ADR-011** — HyDE (Hypothetical Document Embeddings) on the dense leg; **+133 % `citation_match`** vs pre-HyDE baseline
+- [x] **ADR-012** — Recover sparse-only fusion candidates from Postgres; all three guarded metrics up vs ADR-011, **−14 % latency**
+- [x] **`POST /ask/stream`** SSE endpoint + Next.js `/chat` UI with token streaming, markdown rendering, citations panel and inline cost/latency meta
 - [ ] **ADR-013** — Promote agent LLM to `llama-3.3-70b-versatile` once dev-day TPD frees up; expected headroom on `citation_rate`
+- [ ] **ADR-014** — Query rewriting / multi-query expansion on top of HyDE if `topic_coverage` stalls below 0.85
 - [ ] Semantic cache (Redis embedding similarity)
-- [ ] FastAPI + SSE streaming endpoint on `/ask`
 - [ ] Langfuse traces wired
 
 ---

@@ -12,7 +12,11 @@ from claude_docs_rag.retrieval.fusion import reciprocal_rank_fusion
 from claude_docs_rag.retrieval.hyde import expand_for_dense
 from claude_docs_rag.retrieval.reranker import rerank
 from claude_docs_rag.settings import settings
-from claude_docs_rag.storage.vector_store import RetrievedChunk, search_semantic
+from claude_docs_rag.storage.vector_store import (
+    RetrievedChunk,
+    fetch_chunks_by_keys,
+    search_semantic,
+)
 
 
 class HybridResult(BaseModel):
@@ -49,13 +53,22 @@ async def hybrid_search(
     sparse_ranked = [(h.source_url, h.chunk_index) for h in sparse_hits]
     fused = reciprocal_rank_fusion([dense_ranked, sparse_ranked], top_k=top_k_retrieval)
 
-    # Map back to the full chunk row (only dense_hits carry the content; for
-    # candidates returned only by BM25 we'd need a DB lookup — kept simple here
-    # by retaining only the dense-side payloads. A second SELECT can be added
-    # if we observe a high fraction of "sparse-only" winners.)
+    # ADR-012: dense_hits carry the chunk payload; sparse-only winners need a
+    # second SQL lookup to resolve. Pre-ADR-012 the code silently dropped them,
+    # which biased retrieval toward dense-favoured pages. We now batch-fetch
+    # every (source_url, chunk_index) that fusion produced but dense did not.
     by_key: dict[tuple[str, int], RetrievedChunk] = {
         (h.source_url, h.chunk_index): h for h in dense_hits
     }
+    missing_keys = [
+        (item.source_url, item.chunk_index)
+        for item in fused
+        if (item.source_url, item.chunk_index) not in by_key
+    ]
+    if missing_keys:
+        recovered = await fetch_chunks_by_keys(missing_keys)
+        by_key.update(recovered)
+
     candidates: list[tuple[RetrievedChunk, float]] = []
     for item in fused:
         chunk = by_key.get((item.source_url, item.chunk_index))

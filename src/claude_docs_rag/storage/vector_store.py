@@ -48,6 +48,42 @@ async def iter_corpus() -> list[tuple[str, int, str]]:
     return [(r[0], int(r[1]), r[2]) for r in rows]
 
 
+async def fetch_chunks_by_keys(
+    keys: list[tuple[str, int]],
+) -> dict[tuple[str, int], RetrievedChunk]:
+    """Fetch chunk payloads (title, section_path, content) for a batch of
+    (source_url, chunk_index) pairs. Used by hybrid retrieval (ADR-012) to
+    recover sparse-only fusion candidates that the dense search didn't return.
+
+    Score is set to 0.0 because BM25 score is in a different normalization
+    space; the reranker re-orders them anyway.
+    """
+    if not keys:
+        return {}
+    urls = [k[0] for k in keys]
+    idxs = [k[1] for k in keys]
+    sql = """
+        SELECT source_url, title, section_path, chunk_index, content
+        FROM documents d
+        JOIN UNNEST(%s::text[], %s::int[]) AS k(url, idx)
+          ON d.source_url = k.url AND d.chunk_index = k.idx
+    """
+    async with connect() as conn, conn.cursor() as cur:
+        await cur.execute(sql, (urls, idxs))
+        rows = await cur.fetchall()
+    return {
+        (r[0], int(r[3])): RetrievedChunk(
+            source_url=r[0],
+            title=r[1],
+            section_path=r[2],
+            chunk_index=int(r[3]),
+            content=r[4],
+            score=0.0,
+        )
+        for r in rows
+    }
+
+
 async def existing_source_urls(urls: list[str]) -> set[str]:
     """Return the subset of `urls` already present in the documents table."""
     if not urls:
