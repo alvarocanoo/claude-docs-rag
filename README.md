@@ -8,6 +8,7 @@
 |-------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------|
 | **<https://claude-docs-rag.vercel.app>** · search page                  | **<https://alvarocano-claude-docs-rag.hf.space>** ([Space page](https://huggingface.co/spaces/alvarocano/claude-docs-rag)) |
 | **<https://claude-docs-rag.vercel.app/chat>** · streaming chat UI       | `GET /healthz` · `POST /search` · `POST /ask` · `POST /ask/stream` (SSE)                                                |
+| `cdrag mcp` · same retrieval as **MCP tools** in any Claude client       | `search_claude_docs` + `ask_claude_docs` over stdio. Wire-in snippet in [`docs/MCP.md`](docs/MCP.md).                  |
 
 **Try the live API directly** (no API key needed):
 
@@ -242,6 +243,7 @@ docker run -p 8000:8000 \
 - [x] **ADR-011** — HyDE (Hypothetical Document Embeddings) on the dense leg; **+133 % `citation_match`** vs pre-HyDE baseline
 - [x] **ADR-012** — Recover sparse-only fusion candidates from Postgres; all three guarded metrics up vs ADR-011, **−14 % latency**
 - [x] **`POST /ask/stream`** SSE endpoint + Next.js `/chat` UI with token streaming, markdown rendering, citations panel and inline cost/latency meta
+- [x] **MCP server** (`cdrag mcp`) — exposes the same retrieval as `search_claude_docs` + `ask_claude_docs` tools to any Claude-compatible client. Setup snippet in [`docs/MCP.md`](docs/MCP.md).
 - [ ] **ADR-013** — Promote agent LLM to `llama-3.3-70b-versatile` once dev-day TPD frees up; expected headroom on `citation_rate`
 - [ ] **ADR-014** — Query rewriting / multi-query expansion on top of HyDE if `topic_coverage` stalls below 0.85
 - [ ] Semantic cache (Redis embedding similarity)

@@ -204,6 +204,21 @@ def serve(
 
 
 @app.command()
+def mcp() -> None:
+    """Run the MCP server (stdio transport).
+
+    Wire this into a Claude Desktop config file (or any MCP-compatible
+    client) and the `search_claude_docs` and `ask_claude_docs` tools become
+    available. See docs/MCP.md for the exact JSON snippet.
+    """
+    from claude_docs_rag.mcp.server import run as run_mcp
+
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    run_mcp()
+
+
+@app.command()
 def ask(
     question: str,
     model: str | None = typer.Option(None, "--model", "-m", help="Override model id."),
