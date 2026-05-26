@@ -73,7 +73,9 @@ def main() -> int:
 
     base_agg = _aggregate(base_subset)
     latest_agg = _aggregate(latest_rows)
-    print(f"\nLatency (latest): avg={statistics.fmean(r['latency_seconds'] for r in latest_rows):.2f}s\n")
+    print(
+        f"\nLatency (latest): avg={statistics.fmean(r['latency_seconds'] for r in latest_rows):.2f}s\n"
+    )
 
     regressions: list[str] = []
     for metric in GUARDED_METRICS:
