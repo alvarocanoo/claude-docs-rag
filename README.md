@@ -7,7 +7,22 @@
 | Frontend (Next.js on Vercel)                                            | Backend (FastAPI on HF Spaces)                                                |
 |-------------------------------------------------------------------------|--------------------------------------------------------------------------------|
 | **<https://claude-docs-rag.vercel.app>**                                | **<https://alvarocano-claude-docs-rag.hf.space>** ([Space page](https://huggingface.co/spaces/alvarocano/claude-docs-rag)) |
-| Type a question or pick a sample chip → top-K reranked hits in ~3-4 s. | `GET /healthz` · `POST /search` · `POST /ask` (the last one needs an API key).|
+| Type a question or pick a sample chip → top-K reranked hits in ~3-4 s. | `GET /healthz` · `POST /search` · `POST /ask` (Groq Llama 3.1 8B by default — see ADR-010).|
+
+**Try the live API directly** (no API key needed):
+
+```bash
+# Hybrid retrieval only — ~3-4 s, returns 5 reranked chunks
+curl -X POST https://alvarocano-claude-docs-rag.hf.space/search \
+  -H "Content-Type: application/json" \
+  -d '{"query":"How does prompt caching work?","k":5}'
+
+# End-to-end RAG: retrieval -> Groq Llama 3.1 8B -> answer with [n] citations
+# ~6-7 s, costs <$0.0002 per call on Groq paid-tier pricing (free-tier in prod)
+curl -X POST https://alvarocano-claude-docs-rag.hf.space/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question":"How does prompt caching work?","k":5,"max_tokens":400}'
+```
 
 **Status**: deployed end-to-end with a real eval baseline committed. Hybrid retrieval over 42,248 chunks of Anthropic Claude docs on Neon Postgres + pgvector. Agent has a pluggable provider ([ADR-010](docs/DECISIONS.md)) — defaults to Groq's free tier (Llama 3.1 8B / 3.3 70B) so the whole stack runs at $0; flip `LLM_PROVIDER=anthropic` for Haiku/Sonnet/Opus. Eval suite baseline ([`evals/baseline.json`](evals/baseline.json)) committed for CI regression gate. CI green (ruff + mypy --strict + pytest 53/53 + hadolint).
 
