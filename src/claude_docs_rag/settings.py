@@ -14,7 +14,15 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # LLM provider selector (see ADR-010). Options: "anthropic" | "groq".
+    # Both backends are wired in agent/client.py; default is anthropic for
+    # backward compatibility, but for free-tier portfolio demos set it to
+    # "groq" and provide GROQ_API_KEY instead of ANTHROPIC_API_KEY.
+    llm_provider: str = Field(default="anthropic", alias="LLM_PROVIDER")
+
     anthropic_api_key: str = Field(default="")
+    groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
+    groq_model: str = Field(default="llama-3.3-70b-versatile", alias="GROQ_MODEL")
 
     # Either provide POSTGRES_DSN (e.g. Neon connection string) — wins if set —
     # or the individual fields (local docker compose default).
@@ -54,6 +62,16 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.cors_origins_raw.split(",") if o.strip()]
+
+    @property
+    def is_llm_configured(self) -> bool:
+        """True iff the selected provider has the credentials it needs."""
+        provider = self.llm_provider.lower()
+        if provider == "anthropic":
+            return bool(self.anthropic_api_key)
+        if provider == "groq":
+            return bool(self.groq_api_key)
+        return False
 
     @property
     def postgres_dsn(self) -> str:

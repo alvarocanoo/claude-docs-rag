@@ -1,0 +1,436 @@
+{
+  "n": 32,
+  "provider": "groq",
+  "model": "llama-3.1-8b-instant",
+  "by_id": [
+    {
+      "id": "001",
+      "category": "messages",
+      "question": "How do I stream messages from the Claude API in Python?",
+      "answer": "You can stream messages from the Claude API in Python using the `anthropic` library. Here's an example of how to do it:\n\n```python\nimport anthropic\n\nclient = anthropic.Anthropic()\n\nwith client.messages.stream(\n    model=\"claude-opus-4-7\",\n    max_tokens=1024,\n    tools=[{\"type\": \"web_search_20250305\", \"name\": \"web_search\", \"max_uses\": 5}],\n    messages=[\n        {\"role\": \"user\", \"content\": \"What is the weather like in New York City today?\"}\n    ],\n) as stream:\n    for text in stream.text_stream:\n        print(text, end=\"\", flush=True)\n```\n\nThis code creates a streaming request to the Claude API with the specified model, maximum tokens, tools, and message. The `stream.text_stream` object yields the text content of the response as it is received, allowing you to process it in real-time.\n\nMake sure to replace the `model`, `max_tokens`, `tools`, and `messages` parameters with your desired settings.\n\nAlso, note that you need to have the `anthropic` library installed in your Python environment. You can install it using pip:\n\n```bash\npip install anthropic\n```",
+      "topic_coverage": 0.75,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 12.517221599933691,
+      "cost_usd": 0.00015020000000000002,
+      "cited_urls": []
+    },
+    {
+      "id": "002",
+      "category": "models",
+      "question": "What is the maximum context window for Claude Sonnet 4.6?",
+      "answer": "I'm not able to find the maximum context window for Claude Sonnet 4.6 in the provided CONTEXT.",
+      "topic_coverage": 0.5,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 21.670293800067157,
+      "cost_usd": 0.00016687,
+      "cited_urls": []
+    },
+    {
+      "id": "003",
+      "category": "caching",
+      "question": "How does prompt caching work and what are the cache breakpoints?",
+      "answer": "Prompt caching works as follows [1]:\n\n1. The system checks if a prompt prefix, up to a specified cache breakpoint, is already cached from a recent query.\n2. If found, it uses the cached version, reducing processing time and costs.\n3. Otherwise, it processes the full prompt and caches the prefix once the response begins.\n\nThe cache breakpoints are determined by the `cache_control` parameter, which can be used in three ways:\n\n1. **Explicit cache breakpoints**: You can set `cache_control` on a specific block to mark it as a cache breakpoint. The system will cache the prefix up to and including this block. You can have up to 4 explicit breakpoints in a prompt.\n2. **Automatic caching**: The system will automatically find the longest prefix that a prior request already wrote to the cache. This is useful when you want to cache a large static prefix, such as a system prompt or context.\n3. **Combining explicit and automatic caching**: You can use both explicit and automatic caching together. For example, you can use an explicit breakpoint to cache your system prompt, while automatic caching handles the conversation.\n\nThe cache breakpoints are used to determine the prefix that is cached. The system will cache the prefix in the following order: `tools`, `system`, then `messages`. This order forms a hierarchy where each level builds upon the previous ones.",
+      "topic_coverage": 0.5,
+      "citation_match": 1.0,
+      "has_citation": 1.0,
+      "latency_seconds": 31.5049946999643,
+      "cost_usd": 0.00012231,
+      "cited_urls": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching.md"
+      ]
+    },
+    {
+      "id": "004",
+      "category": "tools",
+      "question": "How do I define a tool schema for Claude to use?",
+      "answer": "Unfortunately, the provided CONTEXT does not contain information on defining a tool schema for Claude.",
+      "topic_coverage": 0.0,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 36.5007529000286,
+      "cost_usd": 0.00016569,
+      "cited_urls": []
+    },
+    {
+      "id": "005",
+      "category": "tools",
+      "question": "How does Claude return a tool_use block and how do I handle it?",
+      "answer": "Claude returns a `tool_use` block in its response when it needs you to run a tool to complete the task. The `tool_use` block contains the tool name, input schema, and other relevant information.\n\nTo handle a `tool_use` block, you need to extract the tool name and input from the block, run the tool, and then return the result to Claude in a `tool_result` block.\n\nHere's a general outline of the steps:\n\n1.  Extract the `tool_use` block from Claude's response.\n2.  Extract the tool name and input from the `tool_use` block.\n3.  Run the tool with the extracted input.\n4.  Return the result of the tool in a `tool_result` block to Claude.\n\nYou can use the following code as a reference:\n\n```javascript\nconst toolUse = response.content.find(\n  (block): block is Anthropic.ToolUseBlock => block.type === \"tool_use\",\n)!;\nconsole.log(`Tool: ${toolUse.name}`);\nconsole.log(`Input: ${JSON.stringify(toolUse.input)}`);\n```\n\nThis code extracts the `tool_use` block from Claude's response and logs the tool name and input to the console.\n\nAfter running the tool, you need to return the result to Claude in a `tool_result` block. The `tool_result` block should have the following structure:\n\n```json\n{\n  \"type\": \"tool_result\",\n  \"tool_use_id\": \"toolu_01D7FLrfh4GYq7yT1ULFeyMV\",\n  \"content\": \"259.75 USD\"\n}\n```\n\nIn this example, `toolu_01D7FLrfh4GYq7yT1ULFeyMV` is the ID of the `tool_use` block, and `\"259.75 USD\"` is the result of the tool.\n\nYou can use the following code to create a `tool_result` block:\n\n```javascript\nconst result = { event_id: \"evt_123\", status: \"created\" };\nconst followup = await client.messages.create({\n  model: \"claude-opus-4-6\",\n  max_tokens: 1024,\n  tools,\n  tool_choice: { type: \"auto\", disable_parallel_tool_use: true },\n  messages: [\n    {\n      role: \"user\",\n      content:\n        \"Schedule a 30-minute sync with alice@example.com and bob@example.com next Monday at 10am.\",\n    },\n    { role: \"assistant\", content: response.content },\n    {\n      role: \"user\",\n      content: [\n        {\n          type: \"tool_result\",\n          tool_use_id: toolUse.id,\n          content: JSON.stringify(result),\n        },\n      ],\n    },\n  ],\n});\n```\n\nThis code creates a `tool_result` block with the result of the tool and sends it back to Claude in a follow-up message.\n\nNote that you need to replace the `result` variable with the actual result of the tool you ran.",
+      "topic_coverage": 0.5,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 26.404423500061966,
+      "cost_usd": 0.00017847000000000002,
+      "cited_urls": []
+    },
+    {
+      "id": "006",
+      "category": "streaming",
+      "question": "What are the SSE event types emitted during message streaming?",
+      "answer": "According to the documentation, the SSE event types emitted during message streaming are:\n\n- `agent.message`\n- `agent.tool_use`\n- `session.status_idle`\n\nThese event types are emitted in the session stream, as well as in the session thread stream.",
+      "topic_coverage": 0.0,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 31.671755700022914,
+      "cost_usd": 0.00014526,
+      "cited_urls": []
+    },
+    {
+      "id": "007",
+      "category": "messages",
+      "question": "How do I make my first API call to Claude with curl?",
+      "answer": "Unfortunately, the provided CONTEXT does not contain information about making an API call to Claude with curl.",
+      "topic_coverage": 0.25,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 37.226750700036064,
+      "cost_usd": 0.00016625,
+      "cited_urls": []
+    },
+    {
+      "id": "008",
+      "category": "tools",
+      "question": "How do I use the computer use tool to control a browser?",
+      "answer": "Unfortunately, the CONTEXT does not contain information on how to use the computer use tool to control a browser.",
+      "topic_coverage": 0.16666666666666666,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 26.817021600087173,
+      "cost_usd": 0.00016575999999999999,
+      "cited_urls": []
+    },
+    {
+      "id": "009",
+      "category": "tools",
+      "question": "What is the bash tool and what commands does it support?",
+      "answer": "Unfortunately, the provided CONTEXT does not contain information about the bash tool's supported commands.",
+      "topic_coverage": 0.4,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 39.539116400061175,
+      "cost_usd": 0.00016639,
+      "cited_urls": []
+    },
+    {
+      "id": "010",
+      "category": "thinking",
+      "question": "How do I enable extended thinking and what are the parameters?",
+      "answer": "To enable extended thinking, you can use the `DEV_FULL_THINKING_2025_05_14` beta version. \n\nHere's an example of how to use it in the `SessionCreateParams` or `SessionRetrieveParams`:\n\n```java\nSessionCreateParams params = new SessionCreateParams();\nparams.setBetas(Arrays.asList(\"DEV_FULL_THINKING_2025_05_14\"));\n```\n\nOr in the `SkillCreateParams`:\n\n```java\nSkillCreateParams params = new SkillCreateParams();\nparams.setBetas(Arrays.asList(\"DEV_FULL_THINKING_2025_05_14\"));\n```\n\nNote that you can also use this beta version in the `UserProfileCreateEnrollmentUrlParams` and `ResourceAddParams` as well.",
+      "topic_coverage": 0.5,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 29.85343560006004,
+      "cost_usd": 0.00017584000000000002,
+      "cited_urls": []
+    },
+    {
+      "id": "011",
+      "category": "thinking",
+      "question": "Can I see the model's thinking content in the response?",
+      "answer": "The model's thinking content is not explicitly shown in the provided responses.",
+      "topic_coverage": 0.25,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 25.25355020002462,
+      "cost_usd": 0.00010680000000000001,
+      "cited_urls": []
+    },
+    {
+      "id": "012",
+      "category": "files",
+      "question": "How do I upload a PDF and use it with Claude?",
+      "answer": "To upload a PDF and use it with Claude, you can use the Files API. Here's a step-by-step guide:\n\n1. **Upload the PDF**: Use the Files API to upload your PDF file to Anthropic's secure storage. You can do this by sending a `POST` request to the `/files` endpoint with the PDF file attached.\n\n   ```bash cURL\n   curl -X POST \\\n     https://api.anthropic.com/v1/files \\\n     -H 'Content-Type: application/pdf' \\\n     -H 'anthropic-beta: files-api-2025-04-14' \\\n     -H 'x-api-key: $ANTHROPIC_API_KEY' \\\n     -T /path/to/your/pdf/file.pdf\n   ```\n\n   This will return a `file_id` that you can use to reference the uploaded PDF.\n\n2. **Reference the uploaded PDF in a Messages request**: To use the uploaded PDF with Claude, you can reference the `file_id` in a Messages request. Here's an example:\n\n   ```bash cURL\n   curl https://api.anthropic.com/v1/messages \\\n     -H \"content-type: application/json\" \\\n     -H \"x-api-key: $ANTHROPIC_API_KEY\" \\\n     -H \"anthropic-version: 2023-06-01\" \\\n     -d '{\n       \"model\": \"claude-opus-4-7\",\n       \"max_tokens\": 1024,\n       \"messages\": [{\n           \"role\": \"user\",\n           \"content\": [{\n               \"type\": \"document\",\n               \"source\": {\n                   \"type\": \"file\",\n                   \"file_id\": \"your_file_id_here\"\n               }\n           },\n           {\n               \"type\": \"text\",\n               \"text\": \"What are the key findings in this document?\"\n           }]\n       }]\n   }'\n   ```\n\n   Replace `your_file_id_here` with the actual `file_id` returned by the Files API.\n\n   This will allow Claude to access the uploaded PDF and respond accordingly.\n\nNote: Make sure to include the `anthropic-beta: files-api-2025-04-14` header in your request to use the Files API.",
+      "topic_coverage": 0.8,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 20.84969399997499,
+      "cost_usd": 0.00013454000000000002,
+      "cited_urls": []
+    },
+    {
+      "id": "013",
+      "category": "files",
+      "question": "What file types does the Files API support?",
+      "answer": "The Files API supports the following file types:\n\n- PDF (`application/pdf`)\n- Plain text (`text/plain`)\n- Images (`image/jpeg`, `image/png`, `image/gif`, `image/webp`)\n- Datasets and other file types (varies) for analyzing data and creating visualizations [1][2].\n\nFor file types that are not supported as `document` blocks (e.g., .csv, .txt, .md, .docx, .xlsx), the Files API converts the files to plain text and includes the content directly in your message [1].",
+      "topic_coverage": 1.0,
+      "citation_match": 1.0,
+      "has_citation": 1.0,
+      "latency_seconds": 25.82116579997819,
+      "cost_usd": 0.00012716000000000002,
+      "cited_urls": [
+        "https://platform.claude.com/docs/en/build-with-claude/files.md",
+        "https://platform.claude.com/docs/en/build-with-claude/files.md"
+      ]
+    },
+    {
+      "id": "014",
+      "category": "citations",
+      "question": "How do I make Claude return citations for its answers?",
+      "answer": "To make Claude return citations for its answers, you need to enable citations on the documents you provide to Claude. Currently, citations must be enabled on all or none of the documents within a request.\n\nHere's an example of how to enable citations on a document:\n\n```json\n{\n  \"role\": \"user\",\n  \"content\": [\n    {\n      \"type\": \"document\",\n      \"source\": {\n        \"type\": \"text\",\n        \"media_type\": \"text/plain\",\n        \"data\": \"The grass is green. The sky is blue.\"\n      },\n      \"title\": \"My Document\",\n      \"context\": \"This is a trustworthy document.\",\n      \"citations\": {\"enabled\": true}\n    },\n    {\n      \"type\": \"text\",\n      \"text\": \"What color is the grass and sky?\"\n    }\n  ]\n}\n```\n\nYou can also use the CLI or SDK to enable citations. For example, in Python:\n\n```python\nimport anthropic\n\nclient = anthropic.Anthropic()\n\nresponse = client.messages.create(\n    model=\"claude-opus-4-7\",\n    max_tokens=1024,\n    messages=[\n        {\n            \"role\": \"user\",\n            \"content\": [\n                {\n                    \"type\": \"document\",\n                    \"source\": {\n                        \"type\": \"text\",\n                        \"media_type\": \"text/plain\",\n                        \"data\": \"The grass is green. The sky is blue.\"\n                    },\n                    \"title\": \"My Document\",\n                    \"context\": \"This is a trustworthy document.\",\n                    \"citations\": {\"enabled\": true}\n                },\n                {\n                    \"type\": \"text\",\n                    \"text\": \"What color is the grass and sky?\"\n                }\n            ]\n        }\n    ]\n)\n```\n\nNote that only text citations are currently supported, and image citations are not yet possible.",
+      "topic_coverage": 0.5,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 33.69467420002911,
+      "cost_usd": 0.00018222,
+      "cited_urls": []
+    },
+    {
+      "id": "015",
+      "category": "batch",
+      "question": "How do I submit a batch of requests to save 50% on cost?",
+      "answer": "I'm unable to answer your question as the CONTEXT block does not contain information about submitting a batch of requests to save 50% on cost.",
+      "topic_coverage": 0.5,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 35.51082610001322,
+      "cost_usd": 0.00016700000000000002,
+      "cited_urls": []
+    },
+    {
+      "id": "016",
+      "category": "batch",
+      "question": "How do I check the status of a batch and retrieve results?",
+      "answer": "To check the status of a batch and retrieve results, you can use the `beta.messages.batches.retrieve` method. This method is idempotent and can be used to poll for Message Batch completion.\n\nYou can make a GET request to the `/v1/messages/batches/{message_batch_id}` endpoint to retrieve the batch status. If the batch is complete, you can access the results by making a request to the `results_url` field in the response.\n\nHere's an example of how you can do this in Python using the Claude API client:\n\n```python\nclient = BetaClient.from_env()\nbatch = client.beta.messages.batches.retrieve(message_batch_id)\nif batch.processing_status == \"completed\":\n    results_url = batch.results_url\n    # Make a request to the results_url to retrieve the results\n    results = requests.get(results_url)\n    # Process the results\nelse:\n    # The batch is not complete, you can poll again later\n    pass\n```\n\nNote that the `results_url` field is only available when the batch is complete. If the batch is still processing, you can poll again later to check the status.\n\nAlso, keep in mind that the `results_url` field is a URL that points to the results of the batch, and you need to make a request to that URL to retrieve the actual results.\n\nYou can also use the `client.beta.messages.batches.retrieve` method with the `options` parameter to specify a timeout for the request. This can be useful if you want to poll for the batch status and retrieve the results within a certain time limit.\n\n```python\nbatch = client.beta.messages.batches.retrieve(message_batch_id, options={\"timeout\": 300})\n```\n\nThis will make the request to the `/v1/messages/batches/{message_batch_id}` endpoint with a timeout of 300 seconds (5 minutes). If the request takes longer than 5 minutes to complete, it will raise a `TimeoutError`.",
+      "topic_coverage": 0.5,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 23.166209100047126,
+      "cost_usd": 0.00014852000000000002,
+      "cited_urls": []
+    },
+    {
+      "id": "017",
+      "category": "models",
+      "question": "Which Claude model is the fastest and cheapest?",
+      "answer": "The fastest and cheapest Claude model is CLAUDE_3_HAIKU_20240307 (\"claude-3-haiku-20240307\") [4][5].",
+      "topic_coverage": 0.75,
+      "citation_match": 0.0,
+      "has_citation": 1.0,
+      "latency_seconds": 35.67180859996006,
+      "cost_usd": 0.00016717000000000001,
+      "cited_urls": [
+        "https://platform.claude.com/docs/en/api/java/beta.md",
+        "https://platform.claude.com/docs/en/api/java/beta/messages/batches.md"
+      ]
+    },
+    {
+      "id": "018",
+      "category": "models",
+      "question": "What is the difference between Opus and Sonnet models?",
+      "answer": "Unfortunately, the provided CONTEXT does not contain information about the differences between Opus and Sonnet models.",
+      "topic_coverage": 0.4,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 33.56030830007512,
+      "cost_usd": 0.00016483,
+      "cited_urls": []
+    },
+    {
+      "id": "019",
+      "category": "tools",
+      "question": "What is parallel tool use and how do I enable it?",
+      "answer": "Parallel tool use is a feature that allows the model to use multiple tools in a single response. This can be useful for tasks that require the model to perform multiple sub-tasks or retrieve information from multiple sources.\n\nTo enable parallel tool use, you can set the `disable_parallel_tool_use` parameter to `false` when creating a message. This parameter is optional and defaults to `false`, so you don't need to specify it if you want to enable parallel tool use.\n\nHere's an example of how to enable parallel tool use in the API request:\n\n```json\n{\n  \"tool\": \"tool_name\",\n  \"disable_parallel_tool_use\": false\n}\n```\n\nAlternatively, you can also specify the `tools` parameter and include multiple tool definitions. In this case, the model will automatically enable parallel tool use and use each tool to perform its respective sub-task.\n\nNote that parallel tool use is only available for client tools, not server tools. If you're using a server tool, you'll need to check the documentation for that specific tool to see if it supports parallel tool use. [1][3][5]",
+      "topic_coverage": 0.75,
+      "citation_match": 0.0,
+      "has_citation": 1.0,
+      "latency_seconds": 39.296117699937895,
+      "cost_usd": 0.00018181,
+      "cited_urls": [
+        "https://platform.claude.com/docs/en/api/typescript/messages/create.md",
+        "https://platform.claude.com/docs/en/api/terraform/messages/batches/create.md",
+        "https://platform.claude.com/docs/en/api/java/beta.md"
+      ]
+    },
+    {
+      "id": "020",
+      "category": "tools",
+      "question": "How do fine-grained tool streaming events work?",
+      "answer": "Unfortunately, the provided CONTEXT does not contain information about fine-grained tool streaming events.",
+      "topic_coverage": 0.5,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 34.8236480000196,
+      "cost_usd": 0.00016559,
+      "cited_urls": []
+    },
+    {
+      "id": "021",
+      "category": "tools",
+      "question": "What is the memory tool and when should I use it?",
+      "answer": "Unfortunately, the provided CONTEXT does not contain information about the memory tool.",
+      "topic_coverage": 0.75,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 28.594880599994212,
+      "cost_usd": 0.00014425,
+      "cited_urls": []
+    },
+    {
+      "id": "022",
+      "category": "mcp",
+      "question": "What is the MCP connector and how do I use it?",
+      "answer": "The MCP connector is a feature in the Claude API that enables you to connect to remote Model Context Protocol (MCP) servers directly from the Messages API without a separate MCP client [3]. This allows you to access external tools and data sources through a standardized protocol.\n\nTo use the MCP connector, you need to:\n\n1. Obtain an access token using OAuth authentication [1].\n2. Configure the MCP server connection details in the `mcp_servers` array, including the URL and authentication token [2][4].\n3. Define the MCP toolset in the `tools` array, specifying which tools to enable and how to configure them [2].\n\nHere's an example configuration:\n```json\n{\n  \"model\": \"claude-opus-4-7\",\n  \"max_tokens\": 1000,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Use tools from both mcp-server-1 and mcp-server-2 to complete this task\"\n    }\n  ],\n  \"mcp_servers\": [\n    {\n      \"type\": \"url\",\n      \"url\": \"https://mcp.example1.com/sse\",\n      \"name\": \"mcp-server-1\",\n      \"authorization_token\": \"TOKEN1\"\n    },\n    {\n      \"type\": \"url\",\n      \"url\": \"https://mcp.example2.com/sse\",\n      \"name\": \"mcp-server-2\",\n      \"authorization_token\": \"TOKEN2\"\n    }\n  ],\n  \"tools\": [\n    {\n      \"type\": \"mcp_toolset\",\n      \"mcp_server_name\": \"mcp-server-1\"\n    },\n    {\n      \"type\": \"mcp_toolset\",\n      \"mcp_server_name\": \"mcp-server-2\",\n      \"default_config\": {\n        \"defer_loading\": true\n      }\n    }\n  ]\n}\n```\nNote that the MCP connector is not eligible for Zero Data Retention (ZDR) and data is retained according to the feature's standard retention policy [3].",
+      "topic_coverage": 1.0,
+      "citation_match": 1.0,
+      "has_citation": 1.0,
+      "latency_seconds": 19.13486049999483,
+      "cost_usd": 0.00010347999999999999,
+      "cited_urls": [
+        "https://platform.claude.com/docs/en/agents-and-tools/mcp-connector.md",
+        "https://platform.claude.com/docs/en/agents-and-tools/mcp-connector.md",
+        "https://platform.claude.com/docs/en/agents-and-tools/mcp-connector.md",
+        "https://platform.claude.com/docs/en/agents-and-tools/mcp-connector.md"
+      ]
+    },
+    {
+      "id": "023",
+      "category": "mcp",
+      "question": "How do I deploy an MCP tunnel with Docker Compose?",
+      "answer": "According to [3], you can deploy an MCP tunnel with Docker Compose by running the stack on a host that can reach your MCP servers, using Docker Compose or Helm. It authenticates with the credentials you set up during creation, retrieves the tunnel token, and registers a certificate automatically. See the deployment guide for more information.",
+      "topic_coverage": 0.75,
+      "citation_match": 0.0,
+      "has_citation": 1.0,
+      "latency_seconds": 36.632020900025964,
+      "cost_usd": 0.00016944,
+      "cited_urls": [
+        "https://platform.claude.com/docs/en/api/terraform/beta/messages/create.md"
+      ]
+    },
+    {
+      "id": "024",
+      "category": "errors",
+      "question": "What HTTP status codes can the Claude API return on errors?",
+      "answer": "Unfortunately, the provided CONTEXT does not contain information about the HTTP status codes returned by the Claude API on errors.",
+      "topic_coverage": 0.0,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 33.17035020003095,
+      "cost_usd": 0.00016679000000000002,
+      "cited_urls": []
+    },
+    {
+      "id": "025",
+      "category": "errors",
+      "question": "How do I handle rate limits and retry with backoff?",
+      "answer": "Rate limits and retry with backoff are handled via the `rate_limit` and `retry` options in the Anthropic Claude API. \n\nYou can set rate limits for API usage in a workspace by using the `rate_limit` option. If unset, rate limits will inherit from the organization\u2019s rate limit. If set, both the workspace and organization limits apply. [1][2][3][4][5]\n\nTo implement retry with backoff, you can use a library like `tenacity` in Python. Here's an example of how you can use it:\n\n```python\nimport tenacity\n\n@tenacity.retry(wait=tenacity.wait_exponential(multiplier=1, min=4, max=10))\ndef call_api(api_url, api_key):\n    try:\n        response = requests.get(api_url, headers={'Authorization': f'Bearer {api_key}'})\n        response.raise_for_status()\n        return response.json()\n    except requests.exceptions.RequestException as e:\n        print(f\"Request failed: {e}\")\n        raise\n\napi_url = \"https://api.anthropic.com/v1/models\"\napi_key = \"your_api_key_here\"\n\ntry:\n    result = call_api(api_url, api_key)\n    print(result)\nexcept tenacity.RetryError as e:\n    print(f\"Rate limit exceeded: {e}\")\n```\n\nIn this example, the `call_api` function is decorated with `@tenacity.retry`, which will retry the function call with exponential backoff if it fails due to a rate limit error. The `wait_exponential` function is used to specify the backoff strategy. The `multiplier` parameter determines how much to increase the backoff time after each failure, and the `min` and `max` parameters determine the minimum and maximum backoff times.",
+      "topic_coverage": 0.8,
+      "citation_match": 0.0,
+      "has_citation": 1.0,
+      "latency_seconds": 34.39213099994231,
+      "cost_usd": 0.00019347000000000003,
+      "cited_urls": [
+        "https://platform.claude.com/docs/en/api/terraform/messages/create.md",
+        "https://platform.claude.com/docs/en/api/terraform/beta/messages/create.md",
+        "https://platform.claude.com/docs/en/api/terraform/models/retrieve.md",
+        "https://platform.claude.com/docs/en/api/terraform/messages/batches/cancel.md",
+        "https://platform.claude.com/docs/en/api/terraform/beta/skills/retrieve.md"
+      ]
+    },
+    {
+      "id": "026",
+      "category": "context",
+      "question": "What is context editing and when should I use it?",
+      "answer": "Context editing is not explicitly mentioned in the provided CONTEXT blocks.",
+      "topic_coverage": 0.6666666666666666,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 15.12052070000209,
+      "cost_usd": 6.814000000000001e-05,
+      "cited_urls": []
+    },
+    {
+      "id": "027",
+      "category": "context",
+      "question": "What is context compaction in Claude?",
+      "answer": "Context compaction in Claude is a feature that automatically condenses earlier parts of a conversation, enabling long-running conversations beyond context limits with minimal integration work [1][3]. It is currently available in beta for specific models, including Claude Mythos Preview, Claude Opus 4.7, Claude Opus 4.6, and Claude Sonnet 4.6 [3].",
+      "topic_coverage": 0.3333333333333333,
+      "citation_match": 1.0,
+      "has_citation": 1.0,
+      "latency_seconds": 18.232910500024445,
+      "cost_usd": 9.044e-05,
+      "cited_urls": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows.md",
+        "https://platform.claude.com/docs/en/build-with-claude/compaction.md"
+      ]
+    },
+    {
+      "id": "028",
+      "category": "messages",
+      "question": "How do I count input tokens before sending a request?",
+      "answer": "You can count input tokens before sending a request by accessing the `input_tokens` field in the `context_management` object. \n\n```json\n{\n  \"context_management\": {\n    \"original_input_tokens\": 0\n  },\n  \"input_tokens\": 2095\n}\n```\n\nIn this example, `input_tokens` is 2095.",
+      "topic_coverage": 0.3333333333333333,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 17.631187099963427,
+      "cost_usd": 9.459e-05,
+      "cited_urls": []
+    },
+    {
+      "id": "029",
+      "category": "tools",
+      "question": "How does the code execution tool work?",
+      "answer": "The code execution tool allows Claude to run Bash commands and manipulate files, including writing code, in a secure, sandboxed environment. When you add the code execution tool to your API request, Claude evaluates whether code execution would help answer your question and uses any combination of the following capabilities:\n\n- **Bash commands**: Execute shell commands for system operations and package management\n- **File operations**: Create, view, and edit files directly, including writing code\n\nAll operations run in a secure sandbox environment, and Claude provides results with any generated charts, calculations, or analysis. [1][2]",
+      "topic_coverage": 0.75,
+      "citation_match": 1.0,
+      "has_citation": 1.0,
+      "latency_seconds": 14.226013800012879,
+      "cost_usd": 7.87e-05,
+      "cited_urls": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool.md",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool.md"
+      ]
+    },
+    {
+      "id": "030",
+      "category": "embeddings",
+      "question": "Does Anthropic provide an embeddings model?",
+      "answer": "No information is available in the provided CONTEXT block about Anthropic providing an embeddings model.",
+      "topic_coverage": 0.5,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 22.74841809994541,
+      "cost_usd": 0.00010834000000000001,
+      "cited_urls": []
+    },
+    {
+      "id": "031",
+      "category": "deployment",
+      "question": "How do I use Claude on Amazon Bedrock?",
+      "answer": "To use Claude on Amazon Bedrock, you can follow these general steps:\n\n1. Ensure you have an AWS account with Amazon Bedrock model access enabled for the Claude models you intend to use.\n2. Choose the authentication path that best fits your security requirements. Claude in Amazon Bedrock supports three authentication paths.\n3. Install an Anthropic client SDK that supports Bedrock. You can use the Bedrock-specific package or module provided by Anthropic's client SDKs.\n4. Use the SDK to make API calls to Claude on Bedrock. The API calls will be made to the Messages API at `/anthropic/v1/messages` on AWS-managed infrastructure.\n\nFor more detailed instructions, you can refer to the [Claude in Amazon Bedrock](/docs/en/build-with-claude/claude-in-amazon-bedrock) documentation.\n\n[1][3][5]",
+      "topic_coverage": 0.75,
+      "citation_match": 1.0,
+      "has_citation": 1.0,
+      "latency_seconds": 18.865151199977845,
+      "cost_usd": 0.00010523999999999999,
+      "cited_urls": [
+        "https://platform.claude.com/docs/en/build-with-claude/claude-in-amazon-bedrock.md",
+        "https://platform.claude.com/docs/en/build-with-claude/claude-on-amazon-bedrock-legacy.md",
+        "https://platform.claude.com/docs/en/build-with-claude/claude-in-amazon-bedrock.md"
+      ]
+    },
+    {
+      "id": "032",
+      "category": "deployment",
+      "question": "How do I use Claude through Google Vertex AI?",
+      "answer": "Unfortunately, I couldn't find any information about using Claude through Google Vertex AI in the provided CONTEXT.",
+      "topic_coverage": 0.6666666666666666,
+      "citation_match": 0.0,
+      "has_citation": 0.0,
+      "latency_seconds": 34.98596510000061,
+      "cost_usd": 0.00016578000000000003,
+      "cited_urls": []
+    }
+  ],
+  "skipped": [],
+  "avg_topic_coverage": 0.5255208333333333,
+  "avg_citation_match": 0.1875,
+  "citation_rate": 0.3125,
+  "avg_latency_seconds": 27.971505568759312,
+  "p95_latency_seconds": 37.226750700036064,
+  "avg_cost_usd": 0.000144916875,
+  "total_cost_usd": 0.00463734,
+  "elapsed_seconds": 895.0910113999853,
+  "timestamp": 1779784012.6065586
+}

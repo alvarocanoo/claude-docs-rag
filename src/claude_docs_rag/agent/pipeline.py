@@ -90,7 +90,8 @@ async def answer_question(
             retrieved=[],
             call=CallResult(
                 text="",
-                model=model or settings.model_simple,
+                provider=settings.llm_provider,
+                model=model or "",
                 input_tokens=0,
                 output_tokens=0,
                 cache_creation_tokens=0,
@@ -118,8 +119,10 @@ async def answer_question(
     messages: list[MessageParam] = [{"role": "user", "content": question}]
 
     t0 = time.perf_counter()
+    # model=None lets create_message pick the configured provider's default
+    # (settings.model_simple for anthropic, settings.groq_model for groq).
     call = await create_message(
-        model=model or settings.model_simple,
+        model=model,
         system=system_blocks,
         messages=messages,
         max_tokens=max_tokens,

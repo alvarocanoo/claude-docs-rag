@@ -300,3 +300,71 @@ Use `cross-encoder/ms-marco-MiniLM-L-6-v2` (22 MB, English-only). The corpus is 
 
 Re-run the bench script after the switch; record per-stage timings and the new TOTAL. Re-run the eval suite once an `ANTHROPIC_API_KEY` is wired; compare `avg_citation_match` and `avg_topic_coverage` against the pre-switch baseline. Drop must be < 5 % to keep the choice.
 
+
+## ADR-010 — Pluggable LLM provider (Anthropic + Groq) for the agent layer
+
+**Date**: 2026-05-26
+**Status**: Accepted
+
+### Context
+
+The agent and the eval suite need an LLM, but the project's portfolio constraint is "no recurring spend". Anthropic's first-party developer flow now requires a $5 minimum top-up before any call (the historical free-credit grant on signup is gone in our region as of 2026-05). The CI eval gate (ADR-004) also can't depend on a card-gated key for a public portfolio repo.
+
+Two requirements collide:
+
+1. The agent code, the prompt-caching plumbing, and the cost-accounting wrapper are written against the Anthropic SDK (ADR-001…ADR-002 lineage). We don't want to lose that as the canonical backend.
+2. We need *some* LLM to actually answer questions in the deployed demo and to produce a first `evals/baseline.json` that PR gates can compare against.
+
+### Decision
+
+Introduce a thin provider abstraction in `src/claude_docs_rag/agent/client.py`:
+
+- `LLM_PROVIDER` env var selects the backend (`anthropic` | `groq`).
+- Two functions, `_create_message_anthropic` and `_create_message_groq`, share the public surface `create_message(...)`. Callers (`pipeline.py`, `server.py`, the eval runner) stay provider-agnostic.
+- The `CallResult` dataclass gains a `provider: str` field so the eval report records *who answered*.
+- `settings.is_llm_configured` replaces the `anthropic_api_key` check in `/ask` so the gate works for whichever provider is selected.
+- Groq's API is OpenAI-compatible; we flatten Anthropic-style `system` block lists to a single string (Groq has no prompt-caching breakpoint).
+
+### Alternatives considered
+
+- **OpenAI / OpenRouter SDK as a single backend that routes everywhere.** Rejected: would force us to drop the native Anthropic SDK and lose first-class typing of cache-control blocks and stream events. The cost of two thin backends is lower than the cost of losing the Anthropic-native primitives the rest of the codebase relies on.
+- **LiteLLM.** Rejected: heavier dep, extra layer of indirection, and we only need two providers right now.
+- **Stay on Anthropic only and pay the $5 to demo.** Rejected for this iteration of the portfolio: the goal was to *demonstrate provider-agnostic design* AND to be runnable for free by anyone cloning the repo. The wrapper is small enough that this is worth doing once, properly.
+- **Stay on Anthropic only and disable `/ask` in prod.** Rejected: the eval suite (ADR-004) is a load-bearing portfolio artifact. We need a real `baseline.json` checked into the repo.
+
+### Consequences
+
+- (+) `cdrag ask` and `cdrag eval` both run on Groq's free tier (`llama-3.3-70b-versatile` for spot demos, `llama-3.1-8b-instant` for the high-volume baseline run that brushed against the 70B's 100 k tokens/day cap during development).
+- (+) `evals/baseline.json` is the *first real baseline* committed to the repo. CI regression gate can finally be activated against numbers, not against a placeholder.
+- (+) Switching back to Anthropic is one env var: `LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY=…`. Zero code change.
+- (−) Prompt caching is silently dropped on Groq (no equivalent feature). When Anthropic is selected the cache breakpoint in `pipeline.py` still works; when Groq is selected those blocks are flattened.
+- (−) The 8 B model emits the required `[n]` citation markers inconsistently (`citation_rate = 0.312` on 32 questions; see findings below). This is exactly the kind of regression the eval suite is for: it's visible, it's quantified, and the path to fix it is documented.
+
+### Findings — first committed `evals/baseline.json`
+
+Run config: `provider=groq`, `model=llama-3.1-8b-instant`, `top_k_rerank=5`, no `--limit` (all 32 golden Q&A from `evals/golden_dataset.jsonl`), measured on Windows + Neon `eu-central-1`.
+
+| Metric                  | Value      | Target (README)  | Verdict                                            |
+|-------------------------|------------|------------------|----------------------------------------------------|
+| `avg_topic_coverage`    | **0.526**  | ≥ 0.85           | Under target. Driven mostly by retrieval misses (see below). |
+| `avg_citation_match`    | **0.188**  | ≥ 0.90           | Under target. Driven by 8 B not following the `[n]` format. |
+| `citation_rate`         | **0.312**  | ≥ 0.95           | Under target. The 8 B model frequently answers without any bracket citation. |
+| `avg_latency_seconds`   | 27.97 s    | —                | Inflated by tenacity retries against Groq free-tier rate limits. |
+| `p95_latency_seconds`   | 37.23 s    | —                | Same root cause; the Anthropic path runs at ~4 s end-to-end (see `cdrag ask` on Haiku 4.5 once wired). |
+| `avg_cost_usd / query`  | $0.00014   | ≤ $0.005         | Within budget by ~35× (Groq paid-tier pricing applied; actual money spent: $0). |
+
+The honest reading of these numbers:
+
+1. **Retrieval, not generation, is the dominant failure mode for `topic_coverage`.** Manual inspection of the per-row dump in `baseline.json` shows that for several questions (e.g. "tool schema for Claude", "tool_use block handling", "context window for Sonnet 4.6") the hybrid pipeline returns terraform / batches / count_tokens docs instead of the canonical pages. A future ADR-011 explores query rewriting, hybrid weight tuning, or a domain-specific embedding fine-tune.
+2. **Citation formatting is generation-bound, not retrieval-bound.** When the same 5-question slice is run against `llama-3.3-70b-versatile` (under the 100 k TPD cap) `citation_rate` rises to 1.0 — every answer includes brackets. The 8 B model is just too small for reliable instruction-following on that constraint. Mitigation: stricter system prompt, or a `LLM_PROVIDER=anthropic` baseline once a key is wired.
+3. **Latency is artificially high.** The 27.97 s average is dominated by the tenacity `wait_exponential` backoff between 429s on the free tier. The same code on Anthropic Haiku 4.5 measured 1.49 s of generation in dev, and the live `/search` (no LLM) sits at ~3 s server-side.
+
+### How we'll measure
+
+The numbers above are now `evals/baseline.json`. The CI eval job (`.github/workflows/ci.yml`) compares `evals/latest.json` against `baseline.json` on PRs. To unblock the gate we need either:
+
+- a `GROQ_API_KEY` GitHub Actions secret with at least the free-tier daily quota for 8 B, or
+- a `LLM_PROVIDER=anthropic` switch with an `ANTHROPIC_API_KEY` secret when the project graduates to a paid LLM.
+
+Whichever is wired first, the gate's `tolerance` (e.g. `-2 %` on `avg_citation_match`) is set against this baseline.
+

@@ -51,6 +51,9 @@ data/
 logs/
 *.log
 
+# Eval rolling output (the committed reference is evals/baseline.json)
+evals/latest.json
+
 # Embeddings cache (puede ser grande)
 .embedding_cache/
 models/

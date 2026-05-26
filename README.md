@@ -9,7 +9,7 @@
 | **<https://claude-docs-rag.vercel.app>**                                | **<https://alvarocano-claude-docs-rag.hf.space>** ([Space page](https://huggingface.co/spaces/alvarocano/claude-docs-rag)) |
 | Type a question or pick a sample chip → top-K reranked hits in ~3-4 s. | `GET /healthz` · `POST /search` · `POST /ask` (the last one needs an API key).|
 
-**Status**: deployed end-to-end. Ingest pipeline + hybrid retrieval running against a real Neon Postgres + pgvector backend (42,248 chunks). Agent (`cdrag ask`) wired but disabled in prod for now — `ANTHROPIC_API_KEY` not set; planned `ADR-010` introduces a pluggable provider so Groq / OpenRouter free tiers can drive the eval suite. CI green.
+**Status**: deployed end-to-end with a real eval baseline committed. Hybrid retrieval over 42,248 chunks of Anthropic Claude docs on Neon Postgres + pgvector. Agent has a pluggable provider ([ADR-010](docs/DECISIONS.md)) — defaults to Groq's free tier (Llama 3.1 8B / 3.3 70B) so the whole stack runs at $0; flip `LLM_PROVIDER=anthropic` for Haiku/Sonnet/Opus. Eval suite baseline ([`evals/baseline.json`](evals/baseline.json)) committed for CI regression gate. CI green (ruff + mypy --strict + pytest 53/53 + hadolint).
 
 ![claude-docs-rag UI](docs/images/ui-search.png)
 
@@ -23,7 +23,7 @@ Most public RAG demos are toys: single retriever, no evals, no observability, no
 
 If you're an engineer reviewing this for hiring purposes, the most interesting files are likely:
 
-- [`docs/DECISIONS.md`](docs/DECISIONS.md) — 8 Architecture Decision Records with trade-offs.
+- [`docs/DECISIONS.md`](docs/DECISIONS.md) — 10 Architecture Decision Records with trade-offs.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — System diagram and request flow.
 - [`src/claude_docs_rag/retrieval/hybrid.py`](src/claude_docs_rag/retrieval/hybrid.py) — dense + sparse + RRF + reranker pipeline.
 - [`src/claude_docs_rag/agent/pipeline.py`](src/claude_docs_rag/agent/pipeline.py) — citation extraction + prompt caching + cost accounting.
@@ -46,23 +46,27 @@ If you're an engineer reviewing this for hiring purposes, the most interesting f
 | Next.js 16 frontend             | **live** | `https://claude-docs-rag.vercel.app` — hits `/search` cross-origin (CORS pinned to Vercel domain)                                                                        |
 | Dockerfile + .dockerignore      | live   | multi-stage, non-root, healthcheck; embedder + reranker pre-cached at build → cold start ~5 s instead of 30-60 s; hadolint clean in CI                                  |
 | GitHub → HF Space sync          | live   | `.github/workflows/sync-to-hf-space.yml` mirrors `main` to the Space on every push (`HF_TOKEN` secret + `HF_USER` / `HF_SPACE_NAME` vars)                                |
-| Agent + citation extraction     | code   | wired but disabled in prod (no API key set); `ADR-010` planned for Groq / OpenRouter pluggable provider                                                                  |
-| Eval suite                      | code   | runs against `evals/golden_dataset.jsonl`; writes `evals/latest.json`; CI gate scaffolded                                                                                |
+| Agent + citation extraction     | live   | pluggable LLM provider (ADR-010): `LLM_PROVIDER=anthropic` or `groq`. Default in prod is Groq free-tier (`llama-3.1-8b-instant` for high-volume, `llama-3.3-70b-versatile` for spot demos). |
+| Eval suite + baseline           | live   | [`evals/baseline.json`](evals/baseline.json): 32 Q&A, Groq 8b-instant, real numbers — see *Success metrics* below                                                         |
 
 ---
 
 ## Success metrics
 
-| Metric                       | Target            | Measured           | Source                            |
-|------------------------------|-------------------|--------------------|-----------------------------------|
-| topic_coverage (per Q&A)     | ≥ 0.85            | pending API key    | LLM `cdrag eval` writes latest.json |
-| citation_match (per Q&A)     | ≥ 0.90            | pending API key    | same                              |
-| **/search P95 latency**      | ≤ 3 s             | **~3.9 s** (CPU)   | live HTTP probe, 5 real queries   |
-| **rerank stage**             | -                 | **~3.2 s** / query | `scripts/bench_search.py`         |
-| **dense retrieval**          | -                 | ~0.9 s / query     | same — Neon network               |
-| **sparse + embed + fuse**    | -                 | < 0.3 s / query    | same                              |
-| Avg cost per query (Haiku)   | ≤ $0.005          | pending API key    | token accounting on every call    |
-| has_citation rate            | ≥ 0.95            | pending API key    | eval runner                       |
+Real numbers from [`evals/baseline.json`](evals/baseline.json) — 32 Q&A, `provider=groq` `model=llama-3.1-8b-instant`, all on free tier. The baseline is committed *honestly*: numbers under target are flagged below and the root cause is explained, not hidden. See [ADR-010](docs/DECISIONS.md) for the full read.
+
+| Metric                       | Target    | Measured     | Source                                |
+|------------------------------|-----------|--------------|---------------------------------------|
+| `topic_coverage` (avg)       | ≥ 0.85    | **0.526** ⚠  | `evals/baseline.json` — retrieval is the bottleneck (see ADR-010 findings, ADR-011 planned) |
+| `citation_match` (avg)       | ≥ 0.90    | **0.188** ⚠  | same — 8 B model under-emits `[n]` markers; 70 B run on 5 Q gave 1.000 here  |
+| `citation_rate`              | ≥ 0.95    | **0.312** ⚠  | same — generation-bound; mitigation tracked under ADR-010                    |
+| **/search P95 latency**      | ≤ 3 s     | **~3.9 s** (CPU) | live HTTP probe via Vercel → HF Space, 5 real queries                    |
+| **rerank stage**             | -         | **~3.2 s** / query | [`scripts/bench_search.py`](scripts/bench_search.py)                  |
+| **dense retrieval**          | -         | ~0.9 s / query  | same — Neon network                                                       |
+| **sparse + embed + fuse**    | -         | < 0.3 s / query | same                                                                       |
+| Avg cost per query           | ≤ $0.005  | **$0.00014** ✅ | `baseline.json` (Groq paid-tier pricing applied; actual $ spent: 0)        |
+
+What an honest eval suite *actually* gets you: the three ⚠ rows above are the eval surfacing real failure modes (retrieval misses on tool/context-window questions; 8 B model not following the `[n]` convention). The fix path is documented in ADR-010 and ADR-011 — that's the whole point of having one.
 
 The "pending API key" rows light up the moment an `ANTHROPIC_API_KEY` is wired —
 nothing else needs to change. Latency tuned from ~100 s/query before ADR-009
@@ -214,9 +218,10 @@ docker run -p 8000:8000 \
 - [x] Minimal Next.js 16 frontend (`web/`)
 - [x] Production deploy + public demo URL — HF Spaces (backend) + Vercel (frontend)
 - [x] GitHub Action that mirrors `main` to the HF Space automatically
-- [ ] **ADR-010** — Pluggable LLM provider (Anthropic / Groq / OpenRouter / Ollama) so `cdrag ask` + the eval suite can run on a free-tier model
-- [ ] First full `cdrag eval` run + baseline numbers committed to `evals/baseline.json`
-- [ ] Activate the eval gate in CI (depends on ADR-010)
+- [x] **ADR-010** — Pluggable LLM provider (Anthropic + Groq), `LLM_PROVIDER` env var
+- [x] First full `cdrag eval` run + numbers committed to [`evals/baseline.json`](evals/baseline.json) (Groq 8b-instant, 32 Q&A, real)
+- [ ] **ADR-011** — Retrieval bottleneck: query rewriting or hybrid weight tuning (baseline identified `topic_coverage = 0.526` as retrieval-bound, not generation-bound)
+- [ ] Activate the eval gate in CI against `evals/baseline.json` (needs `GROQ_API_KEY` repo secret)
 - [ ] Semantic cache (Redis embedding similarity)
 - [ ] FastAPI + SSE streaming endpoint on `/ask`
 - [ ] Langfuse traces wired

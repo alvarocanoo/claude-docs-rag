@@ -82,6 +82,7 @@ class AskResponse(BaseModel):
     question: str
     answer: str
     citations: list[CitationOut]
+    provider: str
     model: str
     input_tokens: int
     output_tokens: int
@@ -225,10 +226,13 @@ def create_app() -> FastAPI:
 
     @app.post("/ask", response_model=AskResponse)
     async def ask(req: AskRequest) -> AskResponse:
-        if not settings.anthropic_api_key:
+        if not settings.is_llm_configured:
             raise HTTPException(
                 status_code=503,
-                detail="ANTHROPIC_API_KEY not configured.",
+                detail=(
+                    f"LLM provider {settings.llm_provider!r} has no credentials configured. "
+                    "Set ANTHROPIC_API_KEY (for anthropic) or GROQ_API_KEY (for groq)."
+                ),
             )
         app.state.requests_total += 1
         app.state.requests_by_endpoint["ask"] += 1
@@ -258,6 +262,7 @@ def create_app() -> FastAPI:
                 )
                 for c in result.citations
             ],
+            provider=call.provider,
             model=call.model,
             input_tokens=call.input_tokens,
             output_tokens=call.output_tokens,

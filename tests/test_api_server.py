@@ -44,11 +44,31 @@ def test_search_validation_rejects_huge_k(client: TestClient) -> None:
     assert resp.status_code == 422
 
 
-def test_ask_requires_api_key(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Without ANTHROPIC_API_KEY the /ask endpoint must refuse with 503."""
+def test_ask_503_when_anthropic_provider_has_no_key(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With LLM_PROVIDER=anthropic and no ANTHROPIC_API_KEY, /ask refuses 503."""
     from claude_docs_rag.api import server as server_mod
 
+    monkeypatch.setattr(server_mod.settings, "llm_provider", "anthropic")
     monkeypatch.setattr(server_mod.settings, "anthropic_api_key", "")
     resp = client.post("/ask", json={"question": "hi"})
     assert resp.status_code == 503
-    assert "ANTHROPIC_API_KEY" in resp.json()["detail"]
+    body = resp.json()
+    assert "ANTHROPIC_API_KEY" in body["detail"]
+    assert "'anthropic'" in body["detail"]
+
+
+def test_ask_503_when_groq_provider_has_no_key(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With LLM_PROVIDER=groq and no GROQ_API_KEY, /ask refuses 503."""
+    from claude_docs_rag.api import server as server_mod
+
+    monkeypatch.setattr(server_mod.settings, "llm_provider", "groq")
+    monkeypatch.setattr(server_mod.settings, "groq_api_key", "")
+    resp = client.post("/ask", json={"question": "hi"})
+    assert resp.status_code == 503
+    body = resp.json()
+    assert "GROQ_API_KEY" in body["detail"]
+    assert "'groq'" in body["detail"]

@@ -64,11 +64,14 @@ The Space rebuild after sync takes ~6-10 min the first time (image build pulls
 
 In the Space UI → **Settings** → **Variables and secrets**, add:
 
-| Type   | Name                   | Value                                                                |
-|--------|------------------------|----------------------------------------------------------------------|
-| Secret | `POSTGRES_DSN`         | `postgresql://...neon.tech/neondb?sslmode=require`                   |
-| Secret | `ANTHROPIC_API_KEY`    | `sk-ant-...` (only needed for `/ask`; `/search` works without it)    |
-| Variable | `CDRAG_CORS_ORIGINS` | `https://<your-vercel-project>.vercel.app` (set after step 2)        |
+| Type     | Name                   | Value                                                                                                            |
+|----------|------------------------|------------------------------------------------------------------------------------------------------------------|
+| Secret   | `POSTGRES_DSN`         | `postgresql://...neon.tech/neondb?sslmode=require`                                                               |
+| Variable | `LLM_PROVIDER`         | `groq` (free, default in this repo) or `anthropic` (Haiku/Sonnet/Opus, paid)                                     |
+| Secret   | `GROQ_API_KEY`         | `gsk_...` from https://console.groq.com/keys — only if `LLM_PROVIDER=groq`                                       |
+| Variable | `GROQ_MODEL`           | `llama-3.3-70b-versatile` for best demo answers or `llama-3.1-8b-instant` for max free-tier quota. Optional.    |
+| Secret   | `ANTHROPIC_API_KEY`    | `sk-ant-...` — only if `LLM_PROVIDER=anthropic`. `/search` works without any LLM key.                            |
+| Variable | `CDRAG_CORS_ORIGINS`   | `https://<your-vercel-project>.vercel.app` (set after step 2)                                                    |
 
 The Space restarts automatically when secrets change. Smoke-check:
 

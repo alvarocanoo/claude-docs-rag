@@ -149,7 +149,13 @@ def eval_cmd(
 
     report = asyncio.run(run_evals(limit=limit, model=model, top_k_rerank=k))
     console.print("\n[bold]Eval report[/bold]")
+    console.print(f"  provider             = {report.provider}")
+    console.print(f"  model                = {report.model}")
     console.print(f"  n                    = {report.n}")
+    if report.skipped:
+        console.print(
+            f"  [yellow]skipped[/yellow]              = {len(report.skipped)} (see latest.json)"
+        )
     console.print(f"  avg_topic_coverage   = {report.avg_topic_coverage:.3f}")
     console.print(f"  avg_citation_match   = {report.avg_citation_match:.3f}")
     console.print(f"  citation_rate        = {report.citation_rate:.3f}")
@@ -223,7 +229,7 @@ def ask(
 
     call = result.call
     console.print(
-        f"\n[dim]model={call.model} | "
+        f"\n[dim]provider={call.provider} model={call.model} | "
         f"input={call.input_tokens} out={call.output_tokens} "
         f"cache_write={call.cache_creation_tokens} cache_read={call.cache_read_tokens} | "
         f"cost=${call.cost_usd:.5f} | "

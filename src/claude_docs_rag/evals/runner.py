@@ -53,7 +53,10 @@ class EvalRow:
 @dataclass
 class EvalReport:
     n: int
+    provider: str
+    model: str
     by_id: list[EvalRow]
+    skipped: list[dict[str, str]]
     avg_topic_coverage: float
     avg_citation_match: float
     citation_rate: float
@@ -117,9 +120,23 @@ async def run_evals(
         items = items[:limit]
 
     rows: list[EvalRow] = []
+    skipped: list[dict[str, str]] = []
+    provider_used: str = ""
+    model_used: str = ""
     for it in items:
-        result = await answer_question(it.question, model=model, top_k_rerank=top_k_rerank)
+        try:
+            result = await answer_question(it.question, model=model, top_k_rerank=top_k_rerank)
+        except Exception as exc:
+            # Don't let a single failure (rate limit, transient API error, etc.)
+            # nuke the whole run. Skip the row, log the reason, keep going so
+            # partial baselines remain useful and the LATEST_PATH still gets
+            # written.
+            skipped.append({"id": it.id, "question": it.question, "error": str(exc)[:200]})
+            continue
         cited_urls = [c.source_url for c in result.citations]
+        if not provider_used:
+            provider_used = result.call.provider
+            model_used = result.call.model
         rows.append(
             EvalRow(
                 id=it.id,
@@ -140,7 +157,10 @@ async def run_evals(
     n = max(len(rows), 1)
     report = EvalReport(
         n=len(rows),
+        provider=provider_used,
+        model=model_used,
         by_id=rows,
+        skipped=skipped,
         avg_topic_coverage=sum(r.topic_coverage for r in rows) / n,
         avg_citation_match=sum(r.citation_match for r in rows) / n,
         citation_rate=sum(r.has_citation for r in rows) / n,
