@@ -1,0 +1,41 @@
+# fly.toml — claude-docs-rag backend
+#
+# Generate the app once with:  flyctl launch --no-deploy --copy-config
+# Set secrets:                  flyctl secrets set POSTGRES_DSN=... ANTHROPIC_API_KEY=... CDRAG_CORS_ORIGINS=https://<your-vercel>.vercel.app
+# Deploy:                       flyctl deploy
+# Logs:                         flyctl logs
+
+app = "claude-docs-rag"
+primary_region = "fra"  # Frankfurt — closest Fly.io region to Neon eu-central-1
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PYTHONUNBUFFERED = "1"
+  HF_HOME = "/app/.hf_cache"
+  PORT = "8000"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  # /healthz returns 200 only once the DB is reachable, which is good for
+  # rolling deploys and load-balancer health checks.
+  [http_service.checks]
+    [http_service.checks.healthz]
+      type = "http"
+      path = "/healthz"
+      interval = "30s"
+      timeout = "10s"
+      grace_period = "60s"
+
+# 1 GB shared CPU is enough for embedder + reranker + Python + FastAPI in
+# memory. Bump to 2 GB if cold starts OOM under load.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1

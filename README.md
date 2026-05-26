@@ -167,19 +167,26 @@ Configure a non-default backend URL with `NEXT_PUBLIC_API_BASE_URL` before
 
 ## Deploy
 
-A multi-stage `Dockerfile` is provided. It pre-caches the embedding + reranker
-models at build time so the first request does not pay the model download.
+The repo is wired for a two-host deploy:
+
+- **Backend** → Fly.io (Dockerfile pre-caches model weights; `fly.toml` pinned
+  to `fra` for Neon `eu-central-1` proximity; auto-stop on idle).
+- **Frontend** → Vercel (free Hobby plan; root directory `web/`).
+
+Step-by-step guide with the exact `flyctl` and Vercel commands lives in
+[`docs/DEPLOY.md`](docs/DEPLOY.md). The BM25 index is bootstrapped from Postgres
+on first server start, so no `data/` directory needs to be shipped.
+
+For a quick local container check:
 
 ```bash
 docker build -t claude-docs-rag .
 docker run -p 8000:8000 \
   -e POSTGRES_DSN=postgresql://... \
   -e ANTHROPIC_API_KEY=sk-ant-... \
+  -e CDRAG_CORS_ORIGINS=http://localhost:3000 \
   claude-docs-rag
 ```
-
-Target hosts: Fly.io (`fly launch`), Railway, or any container runtime with
-egress to Neon + Anthropic.
 
 ---
 

@@ -111,6 +111,21 @@ def _init_state(app: FastAPI) -> None:
     app.state.errors_total = 0
 
 
+async def _bootstrap_bm25_if_missing() -> None:
+    """In a fresh deploy the BM25 index isn't shipped in the image (it depends
+    on what's in Postgres). If it's not on disk, rebuild it from the corpus.
+    No-op when the index is already present."""
+    if Path(BM25_INDEX_DIR).exists():
+        return
+    from claude_docs_rag.retrieval.sparse import build_index
+    from claude_docs_rag.storage.vector_store import iter_corpus
+
+    corpus = await iter_corpus()
+    if not corpus:
+        return  # empty DB; /search will surface the missing-index error later
+    build_index(corpus)
+
+
 async def _warmup() -> None:
     """Run a full hybrid_search once so embedder, BM25 index, reranker and the
     DB connection are all primed before the first user request."""
@@ -121,8 +136,10 @@ async def _warmup() -> None:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Warmup is best-effort; if a model is missing the server still boots and
-    # individual requests will surface a clear error.
+    # Bootstrap + warmup are best-effort; if a model or the DB is missing the
+    # server still boots and individual requests surface a clear error.
+    with suppress(Exception):
+        await _bootstrap_bm25_if_missing()
     with suppress(Exception):
         await _warmup()
     yield
@@ -135,11 +152,11 @@ def create_app() -> FastAPI:
         description="Hybrid RAG over Anthropic Claude API docs.",
         lifespan=_lifespan,
     )
-    # Permissive CORS for the local dev frontend. In production this should be
-    # tightened to the actual deploy origin.
+    # CORS origins come from settings (CDRAG_CORS_ORIGINS env var). Default
+    # covers local dev; prod should pin to the deployed frontend URL.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_origins=settings.cors_origins,
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )

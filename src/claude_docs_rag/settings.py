@@ -43,6 +43,18 @@ class Settings(BaseSettings):
     semantic_cache_threshold: float = 0.93
     cache_ttl_seconds: int = 86400
 
+    # Comma-separated list of origins allowed by CORS on /search, /ask, etc.
+    # Defaults cover local dev. In prod, set CDRAG_CORS_ORIGINS to the deployed
+    # frontend URL (e.g. "https://claude-docs-rag.vercel.app").
+    cors_origins_raw: str = Field(
+        default="http://localhost:3000,http://127.0.0.1:3000",
+        alias="CDRAG_CORS_ORIGINS",
+    )
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins_raw.split(",") if o.strip()]
+
     @property
     def postgres_dsn(self) -> str:
         if self.postgres_dsn_override:

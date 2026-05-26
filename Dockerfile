@@ -43,12 +43,12 @@ COPY src/ ./src/
 COPY scripts/ ./scripts/
 COPY evals/ ./evals/
 
-# Model weights (~80 MB combined) are downloaded on first server startup by
-# the lifespan warmup. To pre-cache them at build time instead (predictable
-# but slower build), add:
-#   RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \
-#       SentenceTransformer('BAAI/bge-small-en-v1.5'); \
-#       CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
+# Pre-cache embedding + reranker weights (~150 MB combined) so the first
+# request after deploy does not pay the download cost. Cold start drops from
+# ~30-60 s to ~5 s once the BM25 index has been bootstrapped from Postgres.
+RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \
+    SentenceTransformer('BAAI/bge-small-en-v1.5'); \
+    CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
 
 RUN chown -R app:app /app
 USER app

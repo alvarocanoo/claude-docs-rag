@@ -14,9 +14,10 @@ data/
 .env.local
 .env.*.local
 
-# docs / tests not needed in runtime image
+# docs / tests / frontend not needed in backend image
 docs/
 tests/
+web/
 # README.md is required by hatchling (declared in pyproject.toml), keep it.
 
 # IDE / OS noise
