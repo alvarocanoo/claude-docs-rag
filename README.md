@@ -4,10 +4,10 @@
 
 ### 🔴 Live demo
 
-| Frontend (Next.js on Vercel)                                            | Backend (FastAPI on HF Spaces)                                                |
-|-------------------------------------------------------------------------|--------------------------------------------------------------------------------|
-| **<https://claude-docs-rag.vercel.app>**                                | **<https://alvarocano-claude-docs-rag.hf.space>** ([Space page](https://huggingface.co/spaces/alvarocano/claude-docs-rag)) |
-| Type a question or pick a sample chip → top-K reranked hits in ~3-4 s. | `GET /healthz` · `POST /search` · `POST /ask` (Groq Llama 3.1 8B by default — see ADR-010).|
+| Frontend (Next.js on Vercel)                                            | Backend (FastAPI on HF Spaces)                                                                                          |
+|-------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------|
+| **<https://claude-docs-rag.vercel.app>** · search page                  | **<https://alvarocano-claude-docs-rag.hf.space>** ([Space page](https://huggingface.co/spaces/alvarocano/claude-docs-rag)) |
+| **<https://claude-docs-rag.vercel.app/chat>** · streaming chat UI       | `GET /healthz` · `POST /search` · `POST /ask` · `POST /ask/stream` (SSE)                                                |
 
 **Try the live API directly** (no API key needed):
 
@@ -26,9 +26,13 @@ curl -X POST https://alvarocano-claude-docs-rag.hf.space/ask \
 
 **Status**: deployed end-to-end with a real eval baseline committed. Hybrid retrieval over 42,248 chunks of Anthropic Claude docs on Neon Postgres + pgvector. Agent has a pluggable provider ([ADR-010](docs/DECISIONS.md)) — defaults to Groq's free tier (Llama 3.1 8B / 3.3 70B) so the whole stack runs at $0; flip `LLM_PROVIDER=anthropic` for Haiku/Sonnet/Opus. Eval suite baseline ([`evals/baseline.json`](evals/baseline.json)) committed for CI regression gate. CI green (ruff + mypy --strict + pytest 53/53 + hadolint).
 
-![claude-docs-rag UI](docs/images/ui-search.png)
+![claude-docs-rag chat UI](docs/images/ui-chat.png)
 
-> Real screenshot: Next.js 16 + Tailwind 4 frontend hitting the FastAPI `/search` endpoint with the BM25 + dense + cross-encoder pipeline against 42,248 chunks of the Anthropic Claude API docs. Latency, rerank scores, and result URLs are unmocked.
+> Real screenshot of `/chat`: SSE token streaming through `POST /ask/stream`. Groq Llama 3.1 8B on free tier, 3.7 s end-to-end, $0.00018 / query, with the agent meta line (`provider/model · tokens · cost · latency`) rendered inline so every answer is auditable.
+
+![claude-docs-rag search UI](docs/images/ui-search.png)
+
+> Real screenshot of `/`: Next.js 16 + Tailwind 4 frontend hitting the FastAPI `/search` endpoint with the BM25 + dense + cross-encoder pipeline against 42,248 chunks of the Anthropic Claude API docs. Latency, rerank scores, and result URLs are unmocked.
 
 ---
 
@@ -237,6 +241,7 @@ docker run -p 8000:8000 \
 - [x] First full `cdrag eval` run + numbers committed to [`evals/baseline.json`](evals/baseline.json)
 - [x] Activate the eval gate in CI against `evals/baseline.json` ([PR #1 / commit `b144489`](https://github.com/alvarocanoo/claude-docs-rag/pull/1))
 - [x] **ADR-011** — HyDE (Hypothetical Document Embeddings) on the dense leg; baseline updated, **+133 % `citation_match`** at flat latency / cost
+- [x] **`POST /ask/stream`** SSE endpoint + Next.js `/chat` UI with token streaming, citations panel, and inline cost/latency meta line
 - [ ] **ADR-012** — Fix sparse-only fusion drop in `hybrid.py` (real bug, separable from HyDE)
 - [ ] **ADR-013** — Promote agent LLM to `llama-3.3-70b-versatile` once dev-day TPD frees up; expected headroom on `citation_rate`
 - [ ] Semantic cache (Redis embedding similarity)

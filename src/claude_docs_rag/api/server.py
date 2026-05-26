@@ -5,24 +5,28 @@ Endpoints:
   GET  /metrics            basic counters (requests, latencies, errors)
   POST /search             hybrid retrieval -> JSON (no LLM call, no API key needed)
   POST /ask                end-to-end RAG -> JSON answer with citations + cost
+  POST /ask/stream         end-to-end RAG -> SSE token stream + final event with citations
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 import time
 from collections import deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
+from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from claude_docs_rag import __version__
-from claude_docs_rag.agent.pipeline import answer_question
+from claude_docs_rag.agent.pipeline import answer_question, stream_answer_question
 from claude_docs_rag.retrieval.hybrid import hybrid_search
 from claude_docs_rag.retrieval.sparse import INDEX_DIR as BM25_INDEX_DIR
 from claude_docs_rag.settings import settings
@@ -272,6 +276,67 @@ def create_app() -> FastAPI:
             retrieval_ms=result.timings.get("retrieval", 0) * 1000,
             generation_ms=result.timings.get("generation", 0) * 1000,
             total_ms=elapsed_ms,
+        )
+
+    @app.post("/ask/stream")
+    async def ask_stream(req: AskRequest) -> StreamingResponse:
+        """Server-Sent Events variant of /ask. Emits one `token` event per
+        text delta, then a single `done` event with citations + cost."""
+        if not settings.is_llm_configured:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"LLM provider {settings.llm_provider!r} has no credentials configured. "
+                    "Set ANTHROPIC_API_KEY (for anthropic) or GROQ_API_KEY (for groq)."
+                ),
+            )
+        app.state.requests_total += 1
+        app.state.requests_by_endpoint["ask"] += 1
+        started = time.perf_counter()
+
+        async def event_stream() -> AsyncIterator[bytes]:
+            try:
+                async for event in stream_answer_question(
+                    req.question,
+                    model=req.model,
+                    top_k_rerank=req.k,
+                    max_tokens=req.max_tokens,
+                ):
+                    if event.done:
+                        elapsed_ms = (time.perf_counter() - started) * 1000
+                        app.state.latencies["ask"].append(elapsed_ms)
+                        payload = {
+                            "citations": [
+                                {
+                                    "chunk_id": c.chunk_id,
+                                    "source_url": c.source_url,
+                                    "section_path": c.section_path,
+                                }
+                                for c in event.citations
+                            ],
+                            "call": asdict(event.call) if event.call else None,
+                            "timings_ms": {k: v * 1000 for k, v in event.timings.items()},
+                            "total_ms": elapsed_ms,
+                        }
+                        yield f"event: done\ndata: {json.dumps(payload)}\n\n".encode()
+                    elif event.delta:
+                        yield (
+                            f"event: token\ndata: {json.dumps({'text': event.delta})}\n\n"
+                        ).encode()
+            except Exception as exc:
+                app.state.errors_total += 1
+                err = json.dumps({"error": str(exc)[:500]})
+                yield f"event: error\ndata: {err}\n\n".encode()
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            # Disable proxy buffering so events flush as they're generated.
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
         )
 
     return app

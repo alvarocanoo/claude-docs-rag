@@ -4,14 +4,16 @@ Supported providers (selected via `LLM_PROVIDER` env / `settings.llm_provider`):
   - "anthropic": official Anthropic SDK, supports prompt caching.
   - "groq": official Groq SDK, free-tier-friendly. No prompt caching support.
 
-The public surface is `create_message(...)`; callers (pipeline.py, server.py)
-do not need to know which backend is in use.
+Public surface:
+  - `create_message(...)`: one-shot completion, returns a `CallResult`.
+  - `stream_message(...)`: async generator of `StreamChunk`s for SSE/token UIs.
 
 See `docs/DECISIONS.md` ADR-010 for the rationale.
 """
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
@@ -62,6 +64,27 @@ class CallResult:
     cache_read_tokens: int
     stop_reason: str | None
     cost_usd: float
+
+
+@dataclass
+class StreamChunk:
+    """A single event in a streaming response.
+
+    Either `text` carries a delta (a few characters / tokens) and is_final is
+    False, or is_final is True and the chunk carries the aggregate usage +
+    cost for the whole call (text will be empty in that case).
+    """
+
+    text: str = ""
+    is_final: bool = False
+    provider: str = ""
+    model: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_creation_tokens: int = 0
+    cache_read_tokens: int = 0
+    stop_reason: str | None = None
+    cost_usd: float = 0.0
 
 
 @lru_cache(maxsize=1)
@@ -226,6 +249,140 @@ async def _create_message_groq(
 
 
 # ---------- Public API ------------------------------------------------------
+
+
+async def _stream_message_anthropic(
+    *,
+    model: str,
+    system: list[TextBlockParam] | str,
+    messages: list[MessageParam],
+    max_tokens: int,
+    temperature: float,
+) -> AsyncIterator[StreamChunk]:
+    async with _anthropic_client().messages.stream(
+        model=model,
+        system=system,
+        messages=messages,
+        max_tokens=max_tokens,
+        temperature=temperature,
+    ) as stream:
+        async for text in stream.text_stream:
+            if text:
+                yield StreamChunk(text=text)
+        final: Message = await stream.get_final_message()
+    usage = final.usage
+    cache_create = getattr(usage, "cache_creation_input_tokens", 0) or 0
+    cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+    yield StreamChunk(
+        is_final=True,
+        provider="anthropic",
+        model=model,
+        input_tokens=usage.input_tokens,
+        output_tokens=usage.output_tokens,
+        cache_creation_tokens=cache_create,
+        cache_read_tokens=cache_read,
+        stop_reason=final.stop_reason,
+        cost_usd=_cost_anthropic(
+            model=model,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            cache_creation_tokens=cache_create,
+            cache_read_tokens=cache_read,
+        ),
+    )
+
+
+async def _stream_message_groq(
+    *,
+    model: str,
+    system: list[TextBlockParam] | str,
+    messages: list[MessageParam],
+    max_tokens: int,
+    temperature: float,
+) -> AsyncIterator[StreamChunk]:
+    system_text = _flatten_system_to_text(system)
+    chat_messages: list[dict[str, Any]] = [{"role": "system", "content": system_text}]
+    for m in messages:
+        content = m["content"]
+        if isinstance(content, list):
+            text_parts = [
+                b.get("text", "")
+                for b in content
+                if isinstance(b, dict) and b.get("type") == "text"
+            ]
+            content = "\n".join(text_parts)
+        chat_messages.append({"role": m["role"], "content": content})
+
+    # `stream_options` is OpenAI-compat but not in Groq SDK's typed overloads;
+    # use `extra_body` to pass it through cleanly. We need `include_usage=True`
+    # so the last streamed chunk carries the prompt/completion token counts.
+    stream = await _groq_client().chat.completions.create(
+        model=model,
+        messages=chat_messages,  # type: ignore[arg-type]
+        max_tokens=max_tokens,
+        temperature=temperature,
+        stream=True,
+        extra_body={"stream_options": {"include_usage": True}},
+    )
+    input_tok = 0
+    output_tok = 0
+    stop_reason: str | None = None
+    # SDK's overload narrows to ChatCompletion | AsyncStream depending on
+    # `stream=True` literal; passing stream_options via extra_body confuses
+    # the narrower. At runtime this is always an AsyncStream here.
+    async for chunk in stream:  # type: ignore[union-attr]
+        if chunk.choices:
+            choice = chunk.choices[0]
+            delta = choice.delta.content if choice.delta else None
+            if delta:
+                yield StreamChunk(text=delta)
+            if choice.finish_reason:
+                stop_reason = choice.finish_reason
+        if chunk.usage:
+            input_tok = chunk.usage.prompt_tokens
+            output_tok = chunk.usage.completion_tokens
+    yield StreamChunk(
+        is_final=True,
+        provider="groq",
+        model=model,
+        input_tokens=input_tok,
+        output_tokens=output_tok,
+        stop_reason=stop_reason,
+        cost_usd=_cost_groq(model=model, input_tokens=input_tok, output_tokens=output_tok),
+    )
+
+
+async def stream_message(
+    *,
+    model: str | None = None,
+    system: list[TextBlockParam] | str,
+    messages: list[MessageParam],
+    max_tokens: int = 1024,
+    temperature: float = 0.0,
+    provider: str | None = None,
+) -> AsyncIterator[StreamChunk]:
+    """Provider-agnostic streaming variant of `create_message`. Yields one
+    chunk per text delta, then a final chunk carrying aggregate usage."""
+    p = _resolve_provider(provider)
+    m = _resolve_model(p, model)
+    if p == "groq":
+        async for chunk in _stream_message_groq(
+            model=m,
+            system=system,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        ):
+            yield chunk
+        return
+    async for chunk in _stream_message_anthropic(
+        model=m,
+        system=system,
+        messages=messages,
+        max_tokens=max_tokens,
+        temperature=temperature,
+    ):
+        yield chunk
 
 
 @retry(

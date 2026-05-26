@@ -65,14 +65,22 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
       <main className="mx-auto max-w-4xl px-6 py-10">
-        <header className="mb-8 border-b border-zinc-200 dark:border-zinc-800 pb-6">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            claude-docs-rag
-          </h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Hybrid retrieval over the Anthropic Claude API docs — BM25 + dense
-            (bge-small) fused with RRF, reranked by a cross-encoder.
-          </p>
+        <header className="mb-8 flex items-start justify-between border-b border-zinc-200 dark:border-zinc-800 pb-6">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              claude-docs-rag
+            </h1>
+            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+              Hybrid retrieval over the Anthropic Claude API docs — BM25 + dense
+              (bge-small) fused with RRF, reranked by a cross-encoder.
+            </p>
+          </div>
+          <a
+            href="/chat"
+            className="shrink-0 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-1.5 text-xs text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          >
+            Try chat →
+          </a>
         </header>
 
         <form
