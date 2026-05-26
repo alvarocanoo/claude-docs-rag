@@ -52,10 +52,10 @@ jobs:
           # Wipe the Space tree except .git, then copy everything we want to
           # ship. .gitignore in the Space repo controls what HF persists.
           find /tmp/space -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
-          # Backend code, deps, infra.
-          cp -r src scripts evals pyproject.toml uv.lock README.md .python-version Dockerfile .dockerignore /tmp/space/
-          # ADRs/Arch — useful inside the Space for cross-linking.
-          [ -d docs ] && cp -r docs /tmp/space/
+          # Backend code, deps, infra. docs/ is intentionally omitted: it
+          # contains the README screenshot (binary, requires HF Xet/LFS) and
+          # the Space links back to GitHub for the full docs anyway.
+          cp -r src scripts evals pyproject.toml uv.lock .python-version Dockerfile .dockerignore /tmp/space/
           # Replace the README with the HF-flavored one (frontmatter + concise).
           cp space/README.md /tmp/space/README.md
 
