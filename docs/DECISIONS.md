@@ -368,3 +368,83 @@ The numbers above are now `evals/baseline.json`. The CI eval job (`.github/workf
 
 Whichever is wired first, the gate's `tolerance` (e.g. `-2 %` on `avg_citation_match`) is set against this baseline.
 
+*(Postscript 2026-05-26: gate was activated in PR #1 / commit `b144489`, using `GROQ_API_KEY` + `POSTGRES_DSN` repo secrets, running `cdrag eval --limit 5` against the baseline subset of the same 5 question ids. See `.github/workflows/ci.yml`.)*
+
+
+## ADR-011 — HyDE (Hypothetical Document Embeddings) for the dense retrieval leg
+
+**Date**: 2026-05-26
+**Status**: Accepted
+
+### Context
+
+The first committed baseline (ADR-010, `evals/baseline.json` initial version, 32 Q&A on Groq Llama 3.1 8B) showed three metrics under their README targets — most damningly `avg_citation_match = 0.188` and `citation_rate = 0.312`. Manual inspection of `by_id` confirmed the root cause was **retrieval, not generation**: for several questions the hybrid pipeline returned `/docs/en/api/terraform/...` or `/docs/en/api/{lang}/messages/batches/...` instead of the canonical conceptual pages.
+
+The pattern was consistent across the failing questions:
+
+| Golden Q&A id | Question                                              | Retrieved (top 5, baseline)                                        |
+|---------------|-------------------------------------------------------|---------------------------------------------------------------------|
+| 002           | "What is the maximum context window for Sonnet 4.6?"  | `messages/batches.md` × 4 + `count_tokens.md` × 1 — wrong domain    |
+| 004           | "How do I define a tool schema for Claude to use?"    | `terraform/completions/create.md` × 5 — wrong language variant      |
+| 005           | "How does Claude return a tool_use block?"            | `php/beta/messages/create.md` + `computer-use-tool.md` — wrong page |
+
+The user question is *conceptual* ("how do I X?") but the dense embedding of that question lands closer in vector space to API-reference pages (which contain dense keyword overlap with "X") than to conceptual pages (which describe X in prose). BM25 doesn't save it either because the keyword overlap goes the wrong direction.
+
+### Decision
+
+Implement **HyDE** (`arxiv 2212.10496`): before the dense retrieval call, ask the LLM to write a *short hypothetical passage* that would answer the question, then embed `query + "\n\n" + hypothetical` and use *that* vector for dense retrieval. BM25 still runs on the raw query (BM25 is keyword-driven and benefits from the verbatim user terms).
+
+Implementation lives in `src/claude_docs_rag/retrieval/hyde.py`. The expansion is wrapped in:
+
+- a defensive `try/except` so any LLM error falls back to the raw query (retrieval never breaks because of HyDE),
+- an `asyncio.wait_for(timeout=settings.hyde_timeout_seconds)` so a hung HyDE call does not block search forever,
+- an `if not settings.hyde_enabled or not settings.is_llm_configured: return query` short-circuit so the system runs without HyDE in fork / unconfigured / no-API-key environments.
+
+The HyDE call reuses the configured LLM provider (`agent.client.create_message`) — there is no separate Anthropic / Groq client in this module. System prompt is tiny (six sentences, asks for plausible docs-style prose, ~150 tokens max).
+
+`HYDE_ENABLED` defaults to **`True`** after seeing the ablation below.
+
+### Alternatives considered
+
+- **URL-pattern boost / filter** (demote `/api/{lang}/` paths in fusion). Cheap, corpus-specific, brittle. Rejected — works for the current corpus but doesn't generalise; if we ever ingest another doc set the heuristic dies. ADR-011 picked a technique, not a hack.
+- **Multi-query expansion** (LLM rewrites the question into 3 paraphrases, embed each, union top-K). More LLM calls, less elegant than HyDE for the same effect. Rejected.
+- **Fix the "sparse-only fusion winners are dropped" path in `hybrid.py`**. There is a real bug there (lines 50-57 of pre-ADR-011 `hybrid.py` retain only dense-side payloads, dropping any BM25-only candidate before the reranker even sees it). Worth fixing **as well**, tracked separately — but on its own this would not address the dense-side mismatch that drives the failing questions.
+- **Larger / domain-adapted embedding model**. Massive change, no eval bench to compare. Out of scope for this ADR.
+- **Stay on the baseline.** Rejected — the eval suite (ADR-004) flagged the failure mode, the whole point is to close the loop.
+
+### Consequences
+
+- (+) `citation_match` jumps from 0.188 to 0.438 — answers cite the *correct* URL pattern much more often.
+- (+) `citation_rate` jumps from 0.312 to 0.562 — the LLM emits a `[n]` marker at all on more questions; we suspect this is because the better-grounded context makes the 8B more confident, but did not measure causally.
+- (+) `topic_coverage` improves from 0.526 to 0.563 (modest).
+- (=) Latency is flat (27.93 s vs 27.97 s avg). The extra HyDE LLM call is small (~150 output tokens) and is dwarfed by tenacity backoff against Groq free-tier 429s. On a paid tier the HyDE call would add ~0.5-1 s; still cheap.
+- (=) Cost per query is unchanged in the floor noise: $0.00013 vs $0.00014.
+- (−) HyDE adds one network round-trip to the critical path of every retrieval. Disabled cleanly via `HYDE_ENABLED=false` if the LLM provider is down / rate-limited.
+- (−) The hypothetical passage can hallucinate, but since we embed *both* the query and the passage, hallucinations don't usually pull dense retrieval off-target — verified on the failing baseline questions during the smoke run.
+
+### Ablation — `evals/baseline.json` updated
+
+Same 32 Q&A, same model, same code path except for the HyDE switch.
+
+| Metric                  | Baseline (HyDE off)  | **HyDE on (committed baseline)**  | Delta                  |
+|-------------------------|----------------------|------------------------------------|------------------------|
+| `avg_topic_coverage`    | 0.526                | **0.563**                          | **+7.0 %**             |
+| `avg_citation_match`    | 0.188                | **0.438**                          | **+133 %**             |
+| `citation_rate`         | 0.312                | **0.562**                          | **+80 %**              |
+| `avg_latency_seconds`   | 27.97 s              | 27.93 s                            | flat                   |
+| `p95_latency_seconds`   | 37.23 s              | 38.85 s                            | flat                   |
+| `avg_cost_usd / query`  | $0.00014             | $0.00013                           | flat                   |
+| `total_cost_usd / 32`   | $0.0046              | $0.0043                            | flat                   |
+
+The post-HyDE numbers replace the previous `evals/baseline.json`. The CI gate now compares future runs against the HyDE baseline; the pre-HyDE numbers live in this ADR as the historical comparison.
+
+### How we'll measure (further)
+
+The three guarded metrics are still below their README targets (0.85 / 0.90 / 0.95). Likely next ADRs:
+
+- **ADR-012** — fix the sparse-only fusion drop in `hybrid.py` (real bug, separable from HyDE).
+- **ADR-013** — switch the agent LLM to a stronger free-tier model (e.g. `llama-3.3-70b-versatile` once the daily TPD is no longer being burned by dev) for `citation_rate` headroom; the 8B physically does not follow the `[n]` convention on every question.
+- **ADR-014** — query rewriting / multi-query expansion *on top* of HyDE, if topic coverage stalls.
+
+
+

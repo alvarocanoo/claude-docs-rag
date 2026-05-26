@@ -51,6 +51,16 @@ class Settings(BaseSettings):
     semantic_cache_threshold: float = 0.93
     cache_ttl_seconds: int = 86400
 
+    # HyDE (Hypothetical Document Embeddings, ADR-011). When True the dense
+    # leg of hybrid retrieval embeds `query + LLM-generated passage` instead
+    # of the raw query. BM25 still runs on the raw query. Enabled by default:
+    # the ablation in ADR-011 shows +133 % citation_match and +80 %
+    # citation_rate against the no-HyDE baseline, at flat latency / cost.
+    # Set HYDE_ENABLED=false to opt out (e.g. when the LLM provider is
+    # rate-limited and you want to skip the extra call).
+    hyde_enabled: bool = Field(default=True, alias="HYDE_ENABLED")
+    hyde_timeout_seconds: float = Field(default=8.0, alias="HYDE_TIMEOUT_SECONDS")
+
     # Comma-separated list of origins allowed by CORS on /search, /ask, etc.
     # Defaults cover local dev. In prod, set CDRAG_CORS_ORIGINS to the deployed
     # frontend URL (e.g. "https://claude-docs-rag.vercel.app").

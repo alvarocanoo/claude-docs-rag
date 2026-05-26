@@ -38,7 +38,7 @@ Most public RAG demos are toys: single retriever, no evals, no observability, no
 
 If you're an engineer reviewing this for hiring purposes, the most interesting files are likely:
 
-- [`docs/DECISIONS.md`](docs/DECISIONS.md) — 10 Architecture Decision Records with trade-offs.
+- [`docs/DECISIONS.md`](docs/DECISIONS.md) — 11 Architecture Decision Records with trade-offs.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — System diagram and request flow.
 - [`src/claude_docs_rag/retrieval/hybrid.py`](src/claude_docs_rag/retrieval/hybrid.py) — dense + sparse + RRF + reranker pipeline.
 - [`src/claude_docs_rag/agent/pipeline.py`](src/claude_docs_rag/agent/pipeline.py) — citation extraction + prompt caching + cost accounting.
@@ -68,20 +68,20 @@ If you're an engineer reviewing this for hiring purposes, the most interesting f
 
 ## Success metrics
 
-Real numbers from [`evals/baseline.json`](evals/baseline.json) — 32 Q&A, `provider=groq` `model=llama-3.1-8b-instant`, all on free tier. The baseline is committed *honestly*: numbers under target are flagged below and the root cause is explained, not hidden. See [ADR-010](docs/DECISIONS.md) for the full read.
+Real numbers from [`evals/baseline.json`](evals/baseline.json) — 32 Q&A, `provider=groq` `model=llama-3.1-8b-instant`, **HyDE on** (ADR-011), all on free tier.
 
-| Metric                       | Target    | Measured     | Source                                |
-|------------------------------|-----------|--------------|---------------------------------------|
-| `topic_coverage` (avg)       | ≥ 0.85    | **0.526** ⚠  | `evals/baseline.json` — retrieval is the bottleneck (see ADR-010 findings, ADR-011 planned) |
-| `citation_match` (avg)       | ≥ 0.90    | **0.188** ⚠  | same — 8 B model under-emits `[n]` markers; 70 B run on 5 Q gave 1.000 here  |
-| `citation_rate`              | ≥ 0.95    | **0.312** ⚠  | same — generation-bound; mitigation tracked under ADR-010                    |
-| **/search P95 latency**      | ≤ 3 s     | **~3.9 s** (CPU) | live HTTP probe via Vercel → HF Space, 5 real queries                    |
-| **rerank stage**             | -         | **~3.2 s** / query | [`scripts/bench_search.py`](scripts/bench_search.py)                  |
-| **dense retrieval**          | -         | ~0.9 s / query  | same — Neon network                                                       |
-| **sparse + embed + fuse**    | -         | < 0.3 s / query | same                                                                       |
-| Avg cost per query           | ≤ $0.005  | **$0.00014** ✅ | `baseline.json` (Groq paid-tier pricing applied; actual $ spent: 0)        |
+| Metric                       | Target    | Pre-HyDE (ADR-010) | **Current** ([ADR-011](docs/DECISIONS.md))  | Source                            |
+|------------------------------|-----------|--------------------|----------------------------------------------|-----------------------------------|
+| `avg_topic_coverage`         | ≥ 0.85    | 0.526              | **0.563**  (+7 %)                            | `evals/baseline.json`             |
+| `avg_citation_match`         | ≥ 0.90    | 0.188              | **0.438**  (+133 %)                          | same                              |
+| `citation_rate`              | ≥ 0.95    | 0.312              | **0.562**  (+80 %)                           | same                              |
+| **/search P95 latency**      | ≤ 3 s     | -                  | **~3.9 s** (CPU)                             | live HTTP probe via Vercel → HF Space, 5 real queries |
+| **rerank stage**             | -         | -                  | **~3.2 s** / query                            | [`scripts/bench_search.py`](scripts/bench_search.py) |
+| **dense retrieval**          | -         | -                  | ~0.9 s / query                                | same — Neon network               |
+| **sparse + embed + fuse**    | -         | -                  | < 0.3 s / query                               | same                              |
+| Avg cost per query           | ≤ $0.005  | $0.00014           | **$0.00013** ✅                              | `baseline.json` (Groq paid-tier pricing applied; actual $ spent: 0) |
 
-What an honest eval suite *actually* gets you: the three ⚠ rows above are the eval surfacing real failure modes (retrieval misses on tool/context-window questions; 8 B model not following the `[n]` convention). The fix path is documented in ADR-010 and ADR-011 — that's the whole point of having one.
+Honest read of the table: the eval suite **measured** the bottleneck (retrieval mismatches on conceptual queries pulling language-specific API reference pages), **named** the fix (ADR-011 — HyDE), **quantified** the improvement (+133 % on `citation_match` at flat latency / cost), and the next ADRs (012-014) are the remaining gap to the targets. That's what an eval suite is for.
 
 The "pending API key" rows light up the moment an `ANTHROPIC_API_KEY` is wired —
 nothing else needs to change. Latency tuned from ~100 s/query before ADR-009
@@ -234,9 +234,11 @@ docker run -p 8000:8000 \
 - [x] Production deploy + public demo URL — HF Spaces (backend) + Vercel (frontend)
 - [x] GitHub Action that mirrors `main` to the HF Space automatically
 - [x] **ADR-010** — Pluggable LLM provider (Anthropic + Groq), `LLM_PROVIDER` env var
-- [x] First full `cdrag eval` run + numbers committed to [`evals/baseline.json`](evals/baseline.json) (Groq 8b-instant, 32 Q&A, real)
-- [ ] **ADR-011** — Retrieval bottleneck: query rewriting or hybrid weight tuning (baseline identified `topic_coverage = 0.526` as retrieval-bound, not generation-bound)
-- [ ] Activate the eval gate in CI against `evals/baseline.json` (needs `GROQ_API_KEY` repo secret)
+- [x] First full `cdrag eval` run + numbers committed to [`evals/baseline.json`](evals/baseline.json)
+- [x] Activate the eval gate in CI against `evals/baseline.json` ([PR #1 / commit `b144489`](https://github.com/alvarocanoo/claude-docs-rag/pull/1))
+- [x] **ADR-011** — HyDE (Hypothetical Document Embeddings) on the dense leg; baseline updated, **+133 % `citation_match`** at flat latency / cost
+- [ ] **ADR-012** — Fix sparse-only fusion drop in `hybrid.py` (real bug, separable from HyDE)
+- [ ] **ADR-013** — Promote agent LLM to `llama-3.3-70b-versatile` once dev-day TPD frees up; expected headroom on `citation_rate`
 - [ ] Semantic cache (Redis embedding similarity)
 - [ ] FastAPI + SSE streaming endpoint on `/ask`
 - [ ] Langfuse traces wired

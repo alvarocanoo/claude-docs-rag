@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from claude_docs_rag.ingest.embedder import embed_texts
 from claude_docs_rag.retrieval import sparse
 from claude_docs_rag.retrieval.fusion import reciprocal_rank_fusion
+from claude_docs_rag.retrieval.hyde import expand_for_dense
 from claude_docs_rag.retrieval.reranker import rerank
 from claude_docs_rag.settings import settings
 from claude_docs_rag.storage.vector_store import RetrievedChunk, search_semantic
@@ -33,8 +34,13 @@ async def hybrid_search(
     top_k_retrieval = top_k_retrieval or settings.top_k_retrieval
     top_k_rerank = top_k_rerank or settings.top_k_rerank
 
+    # HyDE (ADR-011): optionally expand the query with an LLM-generated
+    # hypothetical passage before embedding. BM25 always sees the raw query
+    # because it's keyword-driven.
+    dense_query_text = await expand_for_dense(query)
+
     # Run dense + sparse in parallel.
-    query_vec = embed_texts([query])[0]
+    query_vec = embed_texts([dense_query_text])[0]
     dense_task = asyncio.create_task(search_semantic(query_vec, k=top_k_retrieval))
     sparse_hits = await asyncio.to_thread(sparse.search, query, k=top_k_retrieval)
     dense_hits = await dense_task
