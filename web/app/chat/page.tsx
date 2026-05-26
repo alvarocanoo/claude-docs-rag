@@ -1,6 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 type Citation = {
   chunk_id: number;
@@ -195,10 +197,61 @@ export default function ChatPage() {
                 {m.streaming && " · streaming…"}
                 {m.error && " · error"}
               </div>
-              <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                {m.content}
+              <div className="text-sm leading-relaxed prose-streaming">
+                {m.role === "assistant" ? (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      code({ className, children, ...props }) {
+                        const isBlock = /\n/.test(String(children ?? ""));
+                        if (isBlock) {
+                          return (
+                            <pre className="my-2 overflow-x-auto rounded-md bg-zinc-100 dark:bg-zinc-800 p-3 text-xs">
+                              <code className={className} {...props}>
+                                {children}
+                              </code>
+                            </pre>
+                          );
+                        }
+                        return (
+                          <code
+                            className="rounded bg-zinc-200 dark:bg-zinc-800 px-1 py-0.5 text-[0.85em] font-mono"
+                            {...props}
+                          >
+                            {children}
+                          </code>
+                        );
+                      },
+                      p({ children }) {
+                        return <p className="my-2 first:mt-0 last:mb-0">{children}</p>;
+                      },
+                      ul({ children }) {
+                        return <ul className="my-2 ml-5 list-disc space-y-1">{children}</ul>;
+                      },
+                      ol({ children }) {
+                        return <ol className="my-2 ml-5 list-decimal space-y-1">{children}</ol>;
+                      },
+                      a({ children, href }) {
+                        return (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-700 dark:text-blue-400 hover:underline"
+                          >
+                            {children}
+                          </a>
+                        );
+                      },
+                    }}
+                  >
+                    {m.content}
+                  </ReactMarkdown>
+                ) : (
+                  <div className="whitespace-pre-wrap">{m.content}</div>
+                )}
                 {m.streaming && (
-                  <span className="ml-1 inline-block h-3 w-2 animate-pulse bg-current opacity-50" />
+                  <span className="ml-1 inline-block h-3 w-2 animate-pulse bg-current opacity-50 align-middle" />
                 )}
               </div>
               {m.error && (
