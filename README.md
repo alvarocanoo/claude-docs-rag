@@ -2,7 +2,14 @@
 
 > Production-grade RAG agent over the Anthropic Claude API documentation. Hybrid retrieval (BM25 + embeddings + reranking), eval suite with CI regression gates, semantic caching and multi-model routing.
 
-**Status**: ingest pipeline and hybrid retrieval running against a real Neon Postgres + pgvector backend. Agent (`cdrag ask`) ready — needs `ANTHROPIC_API_KEY` to demo. Eval suite ready — same. CI green.
+### 🔴 Live demo
+
+| Frontend (Next.js on Vercel)                                            | Backend (FastAPI on HF Spaces)                                                |
+|-------------------------------------------------------------------------|--------------------------------------------------------------------------------|
+| **<https://claude-docs-rag.vercel.app>**                                | **<https://alvarocano-claude-docs-rag.hf.space>** ([Space page](https://huggingface.co/spaces/alvarocano/claude-docs-rag)) |
+| Type a question or pick a sample chip → top-K reranked hits in ~3-4 s. | `GET /healthz` · `POST /search` · `POST /ask` (the last one needs an API key).|
+
+**Status**: deployed end-to-end. Ingest pipeline + hybrid retrieval running against a real Neon Postgres + pgvector backend (42,248 chunks). Agent (`cdrag ask`) wired but disabled in prod for now — `ANTHROPIC_API_KEY` not set; planned `ADR-010` introduces a pluggable provider so Groq / OpenRouter free tiers can drive the eval suite. CI green.
 
 ![claude-docs-rag UI](docs/images/ui-search.png)
 
@@ -28,18 +35,19 @@ If you're an engineer reviewing this for hiring purposes, the most interesting f
 
 ## Verified end-to-end
 
-| Component                       | Status | Evidence                                                           |
-|---------------------------------|--------|--------------------------------------------------------------------|
-| CI on GitHub Actions            | green  | ruff, mypy --strict (25 files), pytest 35/35                       |
-| Neon serverless Postgres        | green  | pgvector 0.8.0 + pg_trgm 1.6, vector(384) HNSW index               |
-| Ingest (incremental, idempotent)| green  | 42,248 chunks of `platform.claude.com/docs` ingested into Neon Postgres |
-| BM25 index (`bm25s`)            | green  | Built over the chunks, persisted under `data/bm25_index/`          |
-| Hybrid retrieval                | green  | 5 real queries via HTTP /search → top-3 relevant, P95 ~3.9 s        |
-| FastAPI HTTP server             | green  | `cdrag serve` → /healthz, /search, /ask, /metrics, lifespan warmup  |
-| Next.js 16 frontend             | green  | `web/` — fetches /search cross-origin; renders top-K with breadcrumb |
-| Dockerfile + .dockerignore      | green  | multi-stage, non-root, healthcheck; hadolint clean in CI            |
-| Agent + citation extraction     | code   | needs `ANTHROPIC_API_KEY` to demo end-to-end                       |
-| Eval suite                      | code   | runs against golden_dataset.jsonl; writes `evals/latest.json`      |
+| Component                       | Status | Evidence                                                                                                                                                                  |
+|---------------------------------|--------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| CI on GitHub Actions            | green  | ruff, mypy --strict (26 files), pytest 40/40, hadolint Dockerfile lint                                                                                                    |
+| Neon serverless Postgres        | live   | pgvector 0.8.0 + pg_trgm 1.6, vector(384) HNSW index, region `eu-central-1`                                                                                              |
+| Ingest (incremental, idempotent)| live   | 42,248 chunks of `platform.claude.com/docs` in Postgres                                                                                                                  |
+| BM25 index (`bm25s`)            | live   | bootstrapped automatically from Postgres on Space cold start (verified locally: 30.9 s)                                                                                  |
+| Hybrid retrieval                | **live** | [`/search`](https://alvarocano-claude-docs-rag.hf.space/healthz) via HF Space returns top-K reranked hits in ~3-4 s end-to-end (measured: 5.0 s wall, 4.2 s server)     |
+| FastAPI HTTP server             | **live** | `https://alvarocano-claude-docs-rag.hf.space` — `/healthz`, `/search`, `/ask`, `/metrics`, lifespan warmup + BM25 bootstrap                                              |
+| Next.js 16 frontend             | **live** | `https://claude-docs-rag.vercel.app` — hits `/search` cross-origin (CORS pinned to Vercel domain)                                                                        |
+| Dockerfile + .dockerignore      | live   | multi-stage, non-root, healthcheck; embedder + reranker pre-cached at build → cold start ~5 s instead of 30-60 s; hadolint clean in CI                                  |
+| GitHub → HF Space sync          | live   | `.github/workflows/sync-to-hf-space.yml` mirrors `main` to the Space on every push (`HF_TOKEN` secret + `HF_USER` / `HF_SPACE_NAME` vars)                                |
+| Agent + citation extraction     | code   | wired but disabled in prod (no API key set); `ADR-010` planned for Groq / OpenRouter pluggable provider                                                                  |
+| Eval suite                      | code   | runs against `evals/golden_dataset.jsonl`; writes `evals/latest.json`; CI gate scaffolded                                                                                |
 
 ---
 
@@ -196,20 +204,22 @@ docker run -p 8000:8000 \
 
 ## Roadmap
 
-- [x] Scaffolding, infra, ADRs (1–8)
+- [x] Scaffolding, infra, ADRs (1–9)
 - [x] Ingest pipeline (scraper → chunker → embedder → pgvector), batched + idempotent
 - [x] Hybrid retrieval (BM25 + dense + RRF fusion)
-- [x] Cross-encoder reranker
+- [x] Cross-encoder reranker (`ms-marco-MiniLM`, ADR-009: 100 s → 3.7 s per query)
 - [x] Golden eval dataset (32 Q&A across 14 categories — to grow to 100+)
 - [x] Eval runner (topic coverage, citation match, latency, cost) writes `latest.json`
-- [x] CI workflow scaffolded with regression gate
+- [x] CI workflow scaffolded with regression gate (ruff, mypy --strict, pytest, hadolint)
+- [x] Minimal Next.js 16 frontend (`web/`)
+- [x] Production deploy + public demo URL — HF Spaces (backend) + Vercel (frontend)
+- [x] GitHub Action that mirrors `main` to the HF Space automatically
+- [ ] **ADR-010** — Pluggable LLM provider (Anthropic / Groq / OpenRouter / Ollama) so `cdrag ask` + the eval suite can run on a free-tier model
 - [ ] First full `cdrag eval` run + baseline numbers committed to `evals/baseline.json`
-- [ ] Activate the eval job in CI (requires `ANTHROPIC_API_KEY` repo secret)
+- [ ] Activate the eval gate in CI (depends on ADR-010)
 - [ ] Semantic cache (Redis embedding similarity)
-- [ ] FastAPI + SSE streaming endpoint
+- [ ] FastAPI + SSE streaming endpoint on `/ask`
 - [ ] Langfuse traces wired
-- [ ] Minimal Next.js frontend
-- [ ] Production deploy (Fly.io / Railway) + public demo URL
 
 ---
 
